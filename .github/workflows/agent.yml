@@ -1,0 +1,119 @@
+name: Scheduled agent run
+
+# Runs the agent for real on a schedule, then publishes the dashboard to
+# GitHub Pages. What the runs need to remember (run log, last seen release,
+# eval results) lives on the dashboard-data branch, so these commits stay out
+# of main's history.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # the agent, daily
+    - cron: "43 6 * * 1" # the eval harness, Mondays
+  workflow_dispatch:
+    inputs:
+      eval:
+        description: Run the eval harness instead of the agent
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # push to dashboard-data
+  pages: write
+  id-token: write
+  actions: read # deploy-pages looks up the uploaded artifact
+
+# One run at a time, so two never push to dashboard-data at once.
+concurrency:
+  group: agent-data
+  cancel-in-progress: false
+
+env:
+  TARGET_REPO: aayushgupta6720-ops/test-repo
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      EVAL_RUN: ${{ github.event.schedule == '43 6 * * 1' || inputs.eval == true }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check out the saved state
+        uses: actions/checkout@v7
+        with:
+          ref: dashboard-data
+          path: data
+
+      - name: Check out the repo the agent patches
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          path: target-repo
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      # Before any step that has the secrets, so install scripts never see them.
+      - run: npm ci
+
+      - name: Restore state
+        run: |
+          cp data/run-log.jsonl data/.changelog-state.json .
+          cp -R data/eval-results .
+
+      # continue-on-error so a failed run's log entry (index.ts writes it even
+      # on failure) still gets saved and published; the last step fails the job.
+      - name: Run the agent
+        id: agent
+        if: env.EVAL_RUN != 'true'
+        continue-on-error: true
+        run: npm run dev
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+
+      # A failing case is a result to show on the dashboard, not a broken run.
+      - name: Run the eval harness
+        if: env.EVAL_RUN == 'true'
+        continue-on-error: true
+        run: npm run eval
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }} # config.ts requires one; the evals never call GitHub
+
+      - name: Save state
+        run: |
+          cp run-log.jsonl .changelog-state.json data/
+          cp -R eval-results/. data/eval-results/
+          cd data
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing new to save"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "${{ env.EVAL_RUN == 'true' && 'Eval' || 'Run' }} $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+
+      - run: npm run dashboard:build -- _site
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5
+
+      - name: Fail the run if the agent failed
+        if: steps.agent.outcome == 'failure'
+        run: |
+          echo "The agent failed; its error is in the run log and on the dashboard."
+          exit 1

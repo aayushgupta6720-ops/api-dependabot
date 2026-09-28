@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { RunLogEntry } from "../runLog.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = path.join(__dirname, "public");
+export const PUBLIC_DIR = path.join(__dirname, "public");
 
 export interface DashboardPaths {
   runLog: string;
@@ -14,7 +14,7 @@ export interface DashboardPaths {
   evalResults: string;
 }
 
-const DEFAULT_PATHS: DashboardPaths = {
+export const DEFAULT_PATHS: DashboardPaths = {
   runLog: path.resolve("./run-log.jsonl"),
   state: path.resolve("./.changelog-state.json"),
   evalResults: path.resolve("./eval-results"),
@@ -86,6 +86,15 @@ function readStatus(paths: DashboardPaths) {
   };
 }
 
+/** The API, by file name under /api/. File names rather than bare routes, so
+ * build.ts can write the same responses out as a static copy of the page. A
+ * Map, so a name like "constructor" can't reach Object.prototype. */
+export const API_FILES = new Map<string, (paths: DashboardPaths) => unknown>([
+  ["runs.json", readRuns],
+  ["evals.json", readEvals],
+  ["status.json", readStatus],
+]);
+
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html",
   ".css": "text/css",
@@ -101,21 +110,10 @@ export function createDashboardServer(paths: DashboardPaths = DEFAULT_PATHS): Se
       // "../" segments are resolved against "/", so they can't climb above it.
       const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
 
-      if (pathname === "/api/runs") {
+      const read = pathname.startsWith("/api/") ? API_FILES.get(pathname.slice("/api/".length)) : undefined;
+      if (read) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(readRuns(paths)));
-        return;
-      }
-
-      if (pathname === "/api/evals") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(readEvals(paths)));
-        return;
-      }
-
-      if (pathname === "/api/status") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(readStatus(paths)));
+        res.end(JSON.stringify(read(paths)));
         return;
       }
 

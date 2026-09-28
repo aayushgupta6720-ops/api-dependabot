@@ -12,7 +12,8 @@
     padding: 0 1rem;
     line-height: 1.4;
   }
-  h1 { font-size: 1.4rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+  .subtitle { margin-top: 0; opacity: 0.75; font-size: 0.9rem; }
   h2 { font-size: 1.1rem; margin-top: 2rem; border-bottom: 1px solid #8884; padding-bottom: 0.3rem; }
   .status-strip {
     display: flex;
@@ -35,6 +36,7 @@
 </head>
 <body>
   <h1>api-dependabot dashboard</h1>
+  <p class="subtitle">Runs of an agent that reads an SDK's release notes for breaking changes and opens pull requests that patch the code using it. <a href="https://github.com/aayushgupta6720-ops/api-dependabot">Source on GitHub</a></p>
 
   <div class="status-strip" id="status">Loading...</div>
 
@@ -45,7 +47,9 @@
   <div id="evals" class="empty">Loading...</div>
 
 <script type="module">
-  import { renderEvals, renderRuns, renderStatus } from "/render.js";
+  // Relative URLs: the static copy (src/dashboard/build.ts) is served under a
+  // subpath on GitHub Pages, not at the root.
+  import { renderEvals, renderRuns, renderStatus } from "./render.js";
 
   async function load(id, path, render) {
     const el = document.getElementById(id);
@@ -54,9 +58,9 @@
     el.innerHTML = render(data);
   }
 
-  load("status", "/api/status", renderStatus);
-  load("runs", "/api/runs", renderRuns);
-  load("evals", "/api/evals", renderEvals);
+  load("status", "api/status.json", renderStatus);
+  load("runs", "api/runs.json", renderRuns);
+  load("evals", "api/evals.json", renderEvals);
 </script>
 </body>
 </html>

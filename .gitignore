@@ -5,6 +5,7 @@ dist/
 .changelog-state.json
 run-log.jsonl
 eval-results/
+_site/
 
 # local checkout of the SDK-consuming repo being scanned; it's its own git repo
 target-repo/

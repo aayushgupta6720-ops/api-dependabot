@@ -1,5 +1,8 @@
 # api-dependabot
 
+**Live dashboard:** https://aayushgupta6720-ops.github.io/api-dependabot/
+(updated by a [daily scheduled run](#scheduled-runs) of the agent)
+
 A multi-step autonomous agent pipeline (detect → scan → patch → PR) that
 watches an SDK's changelog for breaking changes, resolves real usages via
 AST analysis, and uses an LLM to generate and submit fixing pull requests
@@ -147,6 +150,41 @@ means an earlier run already opened that fix). A failure patching or opening
 a PR for one file is caught and recorded instead of aborting the rest of
 the run — later changes/files in the same run still get processed.
 
+## Scheduled runs
+
+`.github/workflows/agent.yml` runs the agent every day at 06:17 UTC against
+stripe-node's releases, opening its PRs on
+[test-repo](https://github.com/aayushgupta6720-ops/test-repo). It runs the
+eval harness on Mondays at 06:43 UTC. After each run it publishes the
+dashboard to GitHub Pages (the live link above). It needs two Actions
+secrets:
+
+- `GEMINI_API_KEY`
+- `TARGET_REPO_TOKEN`: a fine-grained token that can only reach the repo the
+  agent patches, with Contents and Pull requests set to read and write.
+  Fine-grained tokens can always read public repos, which covers the SDK's
+  releases and changelog.
+
+What the runs need to remember (`run-log.jsonl`, `.changelog-state.json`,
+`eval-results/`) is kept on the `dashboard-data` branch. Each run restores it,
+commits what changed, and pushes it back, so the daily commits stay out of
+`main`. To look at that data locally:
+
+```bash
+git fetch origin dashboard-data
+git show origin/dashboard-data:run-log.jsonl
+```
+
+Local `npm run dev` runs keep their own state in the working copy and don't
+touch the branch.
+
+To run it by hand, use `gh workflow run agent.yml`, or add `-f eval=true`
+to run the eval harness instead. A run whose agent step fails still saves
+and publishes its log entry, error included, and is then marked failed so
+GitHub sends an email. GitHub switches off schedules in a public repo after
+60 days with no activity. If that happens, re-enable the workflow in the
+Actions tab.
+
 ## Dashboard
 
 ```bash
@@ -162,6 +200,12 @@ built on Node's built-in `http` server plus a static HTML/JS page.
 It listens on `127.0.0.1` only, since the run history (PR links, file
 paths, errors) isn't for everyone on your network. `DASHBOARD_HOST=0.0.0.0`
 opens it up; there's no auth, so only do that on a network you trust.
+
+`npm run dashboard:build -- <dir>` writes a static copy: the same page, with
+each API response saved as a file at the URL the page fetches
+(`api/runs.json`, …). That's what the scheduled run publishes. Its data comes
+from runs against the public test repo, so publishing it is deliberate. It's
+read-only: plain files, no server behind it.
 Everything it shows is escaped: versions and method names are the model's
 reading of someone else's release notes, and errors can quote raw model
 output, so none of it is trusted as HTML. An unreadable line in
@@ -175,8 +219,8 @@ npm test
 
 Runs offline with Node's built-in test runner (no API keys or network): the
 retry logic in `src/pipeline.ts` (what gets marked seen, what a retry
-skips), the dashboard's escaping and error handling, and how the Gemini key
-is sent.
+skips), the dashboard's escaping and error handling, its static copy, and
+how the Gemini key is sent.
 
 ## What's stubbed vs. real
 
@@ -188,10 +232,10 @@ is sent.
 | Changelog watcher | Working — polls GitHub Releases, extracts breaking changes via Gemini |
 | Eval harness | Working — replays fixtures through the patch generator, grades pass/fail |
 | Run logging | Working — every run appends structured results to `run-log.jsonl` |
-| Dashboard | Working — read-only view of runs, evals, and watcher health |
+| Dashboard | Working — read-only view of runs, evals, and watcher health; published to GitHub Pages after each scheduled run |
 
 ## Next steps
 
 Nothing major stubbed out. Possible follow-ups: retention/rotation for
-`run-log.jsonl` if it grows large, and auth if the dashboard is ever
-exposed beyond localhost.
+`run-log.jsonl` as the daily runs grow it, and auth if the live server
+(rather than the static copy) is ever exposed beyond localhost.
