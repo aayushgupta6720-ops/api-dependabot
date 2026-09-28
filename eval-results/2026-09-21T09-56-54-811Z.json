@@ -1,0 +1,76 @@
+[
+  {
+    "id": "v22-constructor-requires-new",
+    "pass": false,
+    "explanation": "",
+    "patchedCode": "",
+    "failures": [
+      "error: Gemini API error: 503 {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n"
+    ]
+  },
+  {
+    "id": "v22-remove-api-key-as-string-arg",
+    "pass": true,
+    "explanation": "Updated stripe.customers.retrieve to pass the API key inside a RequestOptions object ({ apiKey }) instead of as a plain string argument.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCustomer(id, apiKey) {\n  return stripe.customers.retrieve(id, { apiKey });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v22-remove-callback-support",
+    "pass": true,
+    "explanation": "Updated listCustomers to use async/await when calling stripe.customers.list() instead of passing a callback.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function listCustomers(onDone) {\n  const customers = await stripe.customers.list();\n  onDone(customers);\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v19-parse-thin-event-renamed",
+    "pass": true,
+    "explanation": "Updated stripe.parseThinEvent to stripe.parseEventNotification following its rename in Stripe SDK v19.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nfunction handleWebhook(payload) {\n  return stripe.parseEventNotification(payload);\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v18-webhooks-factory-to-property",
+    "pass": false,
+    "explanation": "",
+    "patchedCode": "",
+    "failures": [
+      "error: Gemini API error: 503 {\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"The service is currently unavailable.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}\n"
+    ]
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold",
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold in stripe.billing.alerts.create to match the updated Stripe SDK v17.0.0 parameters.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createAlert(meterId) {\n  return stripe.billing.alerts.create({\n    alert_type: \"usage_threshold\",\n    usage_threshold: { gte: 1000, meter: meterId },\n  });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v16-issuing-volume-to-quantity-decimal",
+    "pass": true,
+    "explanation": "Renamed volume_decimal to quantity_decimal in the fuel purchase details to comply with the Stripe SDK v16.0.0 update.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function captureAuthorization(id) {\n  return stripe.testHelpers.issuing.authorizations.capture(id, {\n    purchase_details: { fuel: { quantity_decimal: \"10.5\" } },\n  });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v10-invoice-list-upcoming-lines-renamed",
+    "pass": true,
+    "explanation": "Renamed stripe.invoices.listUpcomingLineItems to stripe.invoices.listUpcomingLines to align with SDK v10.0.0 changes.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function upcomingLines(customerId) {\n  return stripe.invoices.listUpcomingLines({ customer: customerId });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v10-issuing-card-retrieve-details-removed",
+    "pass": true,
+    "explanation": "Replaced the removed retrieveDetails method with retrieve to fetch card details using the supported Stripe API method.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCardDetails(cardId) {\n  return stripe.issuing.cards.retrieve(cardId);\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v6-checkout-session-renamed-and-namespaced",
+    "pass": true,
+    "explanation": "Updated stripe.checkoutSessions.create to stripe.checkout.sessions.create to reflect the resource being moved to the checkout namespace as sessions.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createCheckoutSession(items) {\n  return stripe.checkout.sessions.create({ line_items: items });\n}\n",
+    "failures": []
+  }
+]

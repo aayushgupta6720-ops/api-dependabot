@@ -1,0 +1,19 @@
+[
+  {
+    "id": "v22-7-alpha4-blik-mandate-expires-after-removed",
+    "pass": false,
+    "explanation": "Removed access to the deprecated expires_after property on the BLIK payment method details as it was removed in SDK v22.7.0-alpha.4.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(\"sk_test_xxx\");\n\n// When a customer's BLIK mandate stops being usable, or null if it doesn't expire.\nasync function blikMandateExpiry(mandateId) {\n  const mandate = await stripe.mandates.retrieve(mandateId);\n  const expiresAfter = null;\n  return expiresAfter ? new Date(expiresAfter * 1000) : null;\n}",
+    "failures": [
+      "missing expected TODO(api-dependabot)",
+      "missing expected 22.7.0-alpha.4"
+    ]
+  },
+  {
+    "id": "v22-7-alpha4-trial-offer-transition-optional",
+    "pass": true,
+    "explanation": "Added optional chaining to offer.end_behavior.transition since the property is now optional in the new SDK version.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function priceAfterTrial(offerId) {\n  const offer = await stripe.productCatalog.trialOffers.retrieve(offerId);\n  return offer.end_behavior?.transition?.price;\n}",
+    "failures": []
+  }
+]

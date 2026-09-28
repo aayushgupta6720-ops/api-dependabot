@@ -1,0 +1,37 @@
+[
+  {
+    "id": "charges-to-payment-intents",
+    "pass": true,
+    "explanation": "Replaced the legacy stripe.charges.create method with stripe.paymentIntents.create as required by the SDK update changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function charge(amount) {\n  return stripe.paymentIntents.create({\n    amount,\n    currency: \"usd\",\n    source: \"tok_visa\",\n  });\n}",
+    "failures": []
+  },
+  {
+    "id": "sources-to-payment-methods",
+    "pass": true,
+    "explanation": "Replaced the deprecated stripe.sources.create method with stripe.paymentMethods.create to comply with the updated SDK.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function addCard(token) {\n  return stripe.paymentMethods.create({\n    type: \"card\",\n    token,\n  });\n}",
+    "failures": []
+  },
+  {
+    "id": "plans-to-prices",
+    "pass": true,
+    "explanation": "Replaced the legacy stripe.plans.create method with stripe.prices.create as specified in the changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createPlan() {\n  return stripe.prices.create({\n    amount: 1000,\n    currency: \"usd\",\n    interval: \"month\",\n    product: \"prod_123\",\n  });\n}",
+    "failures": []
+  },
+  {
+    "id": "orders-to-checkout-sessions",
+    "pass": true,
+    "explanation": "Replaced the deprecated stripe.orders.create method with stripe.checkout.sessions.create to comply with the new SDK update.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function placeOrder(items) {\n  return stripe.checkout.sessions.create({ items });\n}",
+    "failures": []
+  },
+  {
+    "id": "subscription-plan-to-price",
+    "pass": true,
+    "explanation": "Replaced the deprecated `plan` field with `price` in the subscription items array to comply with the updated Stripe SDK.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function subscribe(customerId, planId) {\n  return stripe.subscriptions.create({\n    customer: customerId,\n    items: [{ price: planId }],\n  });\n}",
+    "failures": []
+  }
+]

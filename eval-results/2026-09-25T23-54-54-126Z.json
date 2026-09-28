@@ -1,0 +1,9 @@
+[
+  {
+    "id": "v17-billing-alert-usage-threshold-read",
+    "pass": true,
+    "explanation": "Renamed `usage_threshold_config` to `usage_threshold` on the retrieved `Billing.Alert` object to match the v17.0.0 SDK update.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function alertThreshold(alertId) {\n  const alert = await stripe.billing.alerts.retrieve(alertId);\n  return alert.usage_threshold.gte;\n}",
+    "failures": []
+  }
+]
