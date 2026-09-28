@@ -95,6 +95,10 @@ releases at once, plus one per affected file for each breaking change.
 The key goes in an `x-goog-api-key` header rather than the URL, where
 proxies and request logs would record it.
 
+A call that gets a 503 back (the model is overloaded, which usually clears
+within seconds) or a 429 (a per-minute limit) is retried after 5, 15 and 45
+seconds before it counts as failed. Any other error fails at once.
+
 ## Eval harness
 
 ```bash

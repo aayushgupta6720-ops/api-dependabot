@@ -15,26 +15,43 @@ export interface ReleaseNotes {
   notes: string;
 }
 
+// The free tier answers 503 when the model is overloaded ("experiencing high
+// demand", usually over within seconds) and 429 when a per-minute limit is hit.
+// Those are waited out rather than failing a patch or an eval case; any other
+// error (a bad key, a bad request) fails at once. Exported so tests can zero it.
+export const RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
+const RETRY_STATUSES = new Set([429, 500, 503]);
+
 async function callGemini(prompt: string): Promise<string> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-    {
-      method: "POST",
-      // In a header rather than ?key=, where proxies and request logs would record it.
-      headers: { "Content-Type": "application/json", "x-goog-api-key": config.geminiApiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+      {
+        method: "POST",
+        // In a header rather than ?key=, where proxies and request logs would record it.
+        headers: { "Content-Type": "application/json", "x-goog-api-key": config.geminiApiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      }
+    );
+
+    const delay = RETRY_DELAYS_MS[attempt];
+    if (!res.ok && RETRY_STATUSES.has(res.status) && delay !== undefined) {
+      await res.body?.cancel();
+      console.warn(`Gemini API error ${res.status}, retrying in ${delay / 1000}s`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
     }
-  );
 
-  if (!res.ok) {
-    throw new Error(`Gemini API error: ${res.status} ${await res.text()}`);
+    if (!res.ok) {
+      throw new Error(`Gemini API error: ${res.status} ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    return text.replace(/```json|```/g, "").trim();
   }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  return text.replace(/```json|```/g, "").trim();
 }
 
 /**

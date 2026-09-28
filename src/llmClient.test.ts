@@ -58,3 +58,37 @@ test("two entries for the same method in one release become one change", async (
 
   assert.deepEqual(changes.map((c) => [c.version, c.entry.split("\n").length]), [["v1", 2], ["v2", 1]]);
 });
+
+/** A Gemini reply per call, in order; the last one repeats. */
+function replies(...statuses: number[]) {
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    const status = statuses[Math.min(calls++, statuses.length - 1)];
+    if (status !== 200) return new Response(`{"error": {"code": ${status}}}`, { status });
+    const text = JSON.stringify({ explanation: "x", patchedCode: "y" });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }));
+  }) as typeof fetch;
+  return () => calls;
+}
+
+test("an overloaded model or a per-minute limit is waited out", async () => {
+  const { generatePatch, RETRY_DELAYS_MS } = await import("./llmClient.js");
+  RETRY_DELAYS_MS.fill(0);
+
+  const calls = replies(503, 429, 200);
+  assert.deepEqual(await generatePatch("entry", "a.js", "code"), { explanation: "x", patchedCode: "y" });
+  assert.equal(calls(), 3);
+});
+
+test("other errors fail at once, and overloads give up after the last retry", async () => {
+  const { generatePatch, RETRY_DELAYS_MS } = await import("./llmClient.js");
+  RETRY_DELAYS_MS.fill(0);
+
+  let calls = replies(400);
+  await assert.rejects(generatePatch("entry", "a.js", "code"), /Gemini API error: 400/);
+  assert.equal(calls(), 1);
+
+  calls = replies(503);
+  await assert.rejects(generatePatch("entry", "a.js", "code"), /Gemini API error: 503/);
+  assert.equal(calls(), 1 + RETRY_DELAYS_MS.length);
+});
