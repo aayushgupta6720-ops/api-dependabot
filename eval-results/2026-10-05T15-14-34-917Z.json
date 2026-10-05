@@ -1,0 +1,93 @@
+[
+  {
+    "id": "v22-constructor-requires-new",
+    "pass": true,
+    "explanation": "Added the 'new' keyword to the Stripe constructor call as required by v22.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nconst stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getBalance() {\n  return stripeClient.balance.retrieve();\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v22-remove-api-key-as-string-arg",
+    "pass": true,
+    "explanation": "Updated the stripe.customers.retrieve call to pass the apiKey within a RequestOptions object instead of as a plain string argument.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCustomer(id, apiKey) {\n  return stripe.customers.retrieve(id, { apiKey });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v22-remove-callback-support",
+    "pass": true,
+    "explanation": "Converted the function to async/await to replace the removed callback support in Stripe v22.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function listCustomers(onDone) {\n  const customers = await stripe.customers.list();\n  onDone(customers);\n}",
+    "failures": []
+  },
+  {
+    "id": "v19-parse-thin-event-renamed",
+    "pass": true,
+    "explanation": "Renamed stripe.parseThinEvent to stripe.parseEventNotification according to the v19.0.0 SDK breaking change.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nfunction handleWebhook(payload) {\n  return stripe.parseEventNotification(payload);\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v18-webhooks-factory-to-property",
+    "pass": true,
+    "explanation": "Updated Stripe.webhooks() to Stripe.webhooks as it is now a plain object instead of a factory function in v18.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nfunction verifyWebhook(payload, sig, secret) {\n  return Stripe.webhooks.constructEvent(payload, sig, secret);\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold",
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on Billing.AlertCreateParams to match SDK version 17.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createAlert(meterId) {\n  return stripe.billing.alerts.create({\n    alert_type: \"usage_threshold\",\n    usage_threshold: { gte: 1000, meter: meterId },\n  });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v16-issuing-volume-to-quantity-decimal",
+    "pass": true,
+    "explanation": "Renamed volume_decimal to quantity_decimal in the fuel purchase details to comply with SDK version 16.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function captureAuthorization(id) {\n  return stripe.testHelpers.issuing.authorizations.capture(id, {\n    purchase_details: { fuel: { quantity_decimal: \"10.5\" } },\n  });\n}",
+    "failures": []
+  },
+  {
+    "id": "v10-invoice-list-upcoming-lines-renamed",
+    "pass": true,
+    "explanation": "Renamed the `listUpcomingLineItems` method on the `Invoice` resource to `listUpcomingLines` as specified in the v10.0.0 SDK changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function upcomingLines(customerId) {\n  return stripe.invoices.listUpcomingLines({ customer: customerId });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v10-issuing-card-retrieve-details-removed",
+    "pass": true,
+    "explanation": "Replaced the removed `retrieveDetails` method call with a throwing Error and a TODO comment as specified for unreplaced method removals.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCardDetails(cardId) {\n  // TODO(api-dependabot): retrieveDetails was removed in v10.0.0\n  throw new Error(\"retrieveDetails was removed in v10.0.0\");\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v6-checkout-session-renamed-and-namespaced",
+    "pass": true,
+    "explanation": "Updated stripe.checkoutSessions to stripe.checkout.sessions to reflect the new namespace and renamed CheckoutSession class.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createCheckoutSession(items) {\n  return stripe.checkout.sessions.create({ line_items: items });\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v22-7-alpha4-blik-mandate-expires-after-removed",
+    "pass": true,
+    "explanation": "Added a TODO comment above the removed expires_after field read for v22.7.0-alpha.4 and left the code to read it as undefined.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(\"sk_test_xxx\");\n\n// When a customer's BLIK mandate stops being usable, or null if it doesn't expire.\nasync function blikMandateExpiry(mandateId) {\n  const mandate = await stripe.mandates.retrieve(mandateId);\n  // TODO(api-dependabot): Mandate.payment_method_details.blik.expires_after removed in v22.7.0-alpha.4; this code can no longer determine the BLIK mandate expiration time from this field.\n  const expiresAfter = mandate.payment_method_details.blik.expires_after;\n  return expiresAfter ? new Date(expiresAfter * 1000) : null;\n}\n",
+    "failures": []
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold-read",
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on the billing alert object to match SDK v17.0.0 changes.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function alertThreshold(alertId) {\n  const alert = await stripe.billing.alerts.retrieve(alertId);\n  return alert.usage_threshold.gte;\n}",
+    "failures": []
+  },
+  {
+    "id": "v22-7-alpha4-trial-offer-transition-optional",
+    "pass": true,
+    "explanation": "Added optional chaining to offer.end_behavior.transition to safely handle the case where it is null or undefined following the v22.7.0-alpha.4 SDK update.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function priceAfterTrial(offerId) {\n  const offer = await stripe.productCatalog.trialOffers.retrieve(offerId);\n  return offer.end_behavior.transition?.price;\n}\n",
+    "failures": []
+  }
+]
