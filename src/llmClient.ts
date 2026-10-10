@@ -170,15 +170,21 @@ If these notes have no breaking changes, return {"changes": [], "notPatched": []
     throw new Error(`The model's reply isn't {"changes": [...], "notPatched": [...]}:\n${cleaned.slice(0, 500)}`);
   }
 
+  // The model may name a release as its changelog heading does ("23.1.0-beta.1") rather than
+  // by its tag ("v23.1.0-beta.1"); either way it's the tag in this batch.
+  const tags = new Map(batch.map((p) => [p.version.replace(/^v/i, "").toLowerCase(), p.version]));
+  const asTag = (v: string | undefined) => (v ? (tags.get(v.replace(/^v/i, "").toLowerCase()) ?? v) : v);
+
   const problems: string[] = [];
   const notPatched = reply.notPatched.flatMap((item) => {
     const c = (item ?? {}) as Record<string, unknown>;
-    const version = releaseTag(c.version);
+    const version = asTag(releaseTag(c.version));
     const entry = typeof c.entry === "string" ? c.entry.trim() : "";
     return version && entry ? [{ version, entry }] : [];
   });
   const changes = reply.changes.flatMap((item) => {
-    const change = toDetectedChange(item);
+    const described = toDetectedChange(item);
+    const change = described && { ...described, version: asTag(described.version)! };
     if (!change) {
       problems.push(`the model described a breaking change unusably: ${JSON.stringify(item).slice(0, 300)}`);
       return [];

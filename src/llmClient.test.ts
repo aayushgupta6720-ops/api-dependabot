@@ -114,6 +114,12 @@ test("notes that mark breaking changes can't come back empty", async () => {
     "v3.0.0: the notes mark breaking changes, but the model reported none",
   ]);
 
+  // A release named as its changelog heading names it, without the "v", is the same release.
+  modelSays({ changes: [], notPatched: [{ version: "23.1.0-beta.1", entry: "a field became required" }] });
+  const unprefixed = await extractBreakingChanges("stripe", [{ version: "v23.1.0-beta.1", notes: "* ⚠️ Change `x` to be required" }]);
+  assert.deepEqual(unprefixed.problems, []);
+  assert.deepEqual(unprefixed.notPatched, [{ version: "v23.1.0-beta.1", entry: "a field became required" }]);
+
   // Saying why there's nothing to patch is an answer.
   modelSays({ changes: [], notPatched: [{ version: "v2.0.0", entry: "a static helper, not a client method" }] });
   const explained = await extractBreakingChanges("stripe", [{ version: "v2.0.0", notes: "* ⚠️ Remove `x`" }]);
