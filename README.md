@@ -51,7 +51,13 @@ A change is either to a method (`charges.create` removed, or one of its
 parameters) or to a field of an object the SDK returns
 (`Mandate.payment_method_details.blik.expires_after` removed or made
 optional). For a method, the scanner finds calls on a client built from the
-package. For a field, it finds code that reads it: plain or optional
+package, however the client got there: an `import` or a `require` (including
+`require("stripe")(key)`), a client created in one module and imported in
+another, `this.stripe` on a class, an alias, `const { customers } = stripe`,
+a TypeScript parameter typed `Stripe`, and bracket access. Only the package
+itself counts: `@stripe/stripe-js`, the browser library, doesn't. A method
+named like the package (`Stripe`) means calling the package itself, as in
+`Stripe(key)` without `new`. For a field, it finds code that reads it: plain or optional
 chaining, `["quoted"]` keys, destructuring, and array elements through
 indexes, `.map`/`.forEach`-style callbacks and `for…of`
 (`classifications[].credit`). With no type information in plain JS, a read
@@ -60,8 +66,18 @@ two names, so `details.blik.expires_after` matches but a bare
 `x.expires_after` doesn't. A one-name field (`livemode`) is only looked for
 in files that import the package, and `*` stands for any one property when
 a field changed under many parents (`country_options.*.igic`). A false
-match costs a model call that finds nothing to change. The scanner skips
-`node_modules`, `.d.ts` files and `dist`/`build` output.
+match costs a model call that finds nothing to change. The scanner reads
+`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs` and `.cjs` files, and skips
+`node_modules`, `.d.ts` files and `dist`/`build` output. A test checks that
+it finds the code of every eval fixture.
+
+Before a patch becomes a pull request it has to parse, as TypeScript or
+JavaScript (types aren't checked: the target repo's dependencies aren't
+installed where the agent runs), and it has to edit the file rather than
+replace it: it may change at most 60% of the file's lines, or 3 in a short
+file. Correct patches in the eval changed 0-43%. A rejected patch is
+recorded as an error, so its release stays unseen and the next run tries
+again.
 
 On the very first run there's no "last seen" marker yet, so it only looks at
 the single most recent release — it won't replay the SDK's entire history.
@@ -123,8 +139,9 @@ npm run eval
 ```
 
 Replays a fixed set of breaking-change fixtures (`src/eval/fixtures.ts`)
-straight through `generatePatch`, checks the output against each fixture's
-`mustContain`/`mustNotContain` substrings or patterns, and writes full
+straight through `generatePatch`, checks that the output would pass the
+pre-PR check above and matches each fixture's `mustContain`/`mustNotContain`
+substrings or patterns, and writes full
 results (explanations + patched code, not just pass/fail) to
 `eval-results/`. `npm run eval -- blik` runs only the cases whose id
 contains "blik".
@@ -240,14 +257,16 @@ npm test
 
 Runs offline with Node's built-in test runner (no API keys or network): the
 retry logic in `src/pipeline.ts` (what gets marked seen, what a retry
-skips), the dashboard's escaping and error handling, its static copy, and
-how the Gemini key is sent.
+skips), how release notes are split and read, the scanner's client
+resolution, the pre-PR patch check, the dashboard's escaping and error
+handling, its static copy, and how the Gemini key is sent.
 
 ## What's stubbed vs. real
 
 | Piece | Status |
 |---|---|
-| Usage scanner (AST-based) | Working — resolves call sites back to a client built from the tracked package, finds reads of changed fields, and groups both per file |
+| Usage scanner (AST-based) | Working — resolves call sites back to a client built from the tracked package (across modules, classes, aliases and destructuring), finds reads of changed fields, and groups both per file |
+| Pre-PR patch check | Working — a patch must parse and edit the file rather than replace it |
 | LLM patch generation (Gemini) | Working |
 | GitHub PR creation | Working |
 | Changelog watcher | Working — polls GitHub Releases, extracts breaking changes via Gemini |

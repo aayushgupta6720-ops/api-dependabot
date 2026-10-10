@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { generatePatch } from "../llmClient.js";
+import { patchProblem } from "../patchCheck.js";
 import { cases } from "./fixtures.js";
 
 interface CaseResult {
@@ -20,6 +21,10 @@ async function runCase(testCase: (typeof cases)[number]): Promise<CaseResult> {
   const found = (check: string | RegExp) =>
     typeof check === "string" ? patchedCode.includes(check) : check.test(patchedCode);
   const failures: string[] = [];
+  // The same check the pipeline makes before opening a PR, so a pass means the
+  // patch would have gone out: it parses and it edits the file rather than replacing it.
+  const problem = patchProblem(`eval/${testCase.id}.ts`, testCase.beforeCode, patchedCode);
+  if (problem) failures.push(problem);
   for (const required of testCase.mustContain) {
     if (!found(required)) {
       failures.push(`missing expected ${required}`);

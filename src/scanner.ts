@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
 
 /**
@@ -14,9 +15,9 @@ export interface UsageMatch {
 /** The repo's own source: dependencies, type declarations and build output
  * aren't code to patch, and node_modules would bury the real matches. */
 function loadSourceFiles(repoPath: string): SourceFile[] {
-  const project = new Project();
+  const project = new Project({ compilerOptions: { allowJs: true } });
   project.addSourceFilesAtPaths([
-    `${repoPath}/**/*.{ts,js}`,
+    `${repoPath}/**/*.{ts,tsx,js,jsx,mjs,cjs}`,
     `!${repoPath}/**/node_modules/**`,
     `!${repoPath}/**/*.d.ts`,
     `!${repoPath}/**/{dist,build}/**`,
@@ -24,16 +25,77 @@ function loadSourceFiles(repoPath: string): SourceFile[] {
   return project.getSourceFiles();
 }
 
-/** Names this file imports from `packageName` (default and named). */
-function importedNames(sourceFile: SourceFile, packageName: string): string[] {
-  return sourceFile
-    .getImportDeclarations()
-    .filter((imp) => imp.getModuleSpecifierValue().includes(packageName))
-    .flatMap((imp) => [
-      imp.getDefaultImport()?.getText(),
-      ...imp.getNamedImports().map((n) => n.getName()),
-    ])
-    .filter((name): name is string => !!name);
+/** The package itself ("stripe", "stripe/esm"), not another one whose name
+ * merely contains it ("@stripe/stripe-js" is the browser library). */
+function isPackage(specifier: string, packageName: string): boolean {
+  return specifier === packageName || specifier.startsWith(`${packageName}/`);
+}
+
+/** The module a `require("...")` call loads, or undefined for anything else. */
+function requiredModule(node: Node | undefined): string | undefined {
+  if (!node || !Node.isCallExpression(node)) return undefined;
+  const callee = node.getExpression();
+  const [arg] = node.getArguments();
+  if (!Node.isIdentifier(callee) || callee.getText() !== "require" || !arg) return undefined;
+  return Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg) ? arg.getLiteralValue() : undefined;
+}
+
+/** Drops wrappers that don't change what an expression refers to: (x), x!, x as T, await x. */
+function unwrap(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isNonNullExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isAwaitExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+/** Local names bound to the package's own exports: `import Stripe from`,
+ * `import { Stripe as S } from`, `import * as S from`, `const Stripe =
+ * require(...)`, `const { Stripe } = require(...)`. */
+function packageBindings(sourceFile: SourceFile, packageName: string): Set<string> {
+  const names = new Set<string>();
+  for (const imp of sourceFile.getImportDeclarations()) {
+    if (!isPackage(imp.getModuleSpecifierValue(), packageName)) continue;
+    const def = imp.getDefaultImport();
+    if (def) names.add(def.getText());
+    const ns = imp.getNamespaceImport();
+    if (ns) names.add(ns.getText());
+    for (const named of imp.getNamedImports()) names.add(named.getAliasNode()?.getText() ?? named.getName());
+  }
+  for (const decl of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const init = decl.getInitializer();
+    if (!init) continue;
+    // require("stripe"), or require("stripe").Stripe / .default
+    const value = unwrap(init);
+    const required = requiredModule(value) ??
+      (Node.isPropertyAccessExpression(value) ? requiredModule(unwrap(value.getExpression())) : undefined);
+    if (!required || !isPackage(required, packageName)) continue;
+    for (const name of boundNames(decl.getNameNode())) names.add(name);
+  }
+  return names;
+}
+
+/** The identifiers a declaration's name binds: `x`, or each name in `{ a, b: c }`. */
+function boundNames(nameNode: Node): string[] {
+  if (Node.isIdentifier(nameNode)) return [nameNode.getText()];
+  if (Node.isObjectBindingPattern(nameNode)) {
+    return nameNode.getElements().flatMap((el) => boundNames(el.getNameNode()));
+  }
+  return [];
+}
+
+/** Whether the file imports or requires the package at all. */
+function usesPackage(sourceFile: SourceFile, packageName: string): boolean {
+  return packageBindings(sourceFile, packageName).size > 0 ||
+    sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((c) => {
+      const mod = requiredModule(c);
+      return mod !== undefined && isPackage(mod, packageName);
+    });
 }
 
 function toMatch(sourceFile: SourceFile, lineNumbers: number[]): UsageMatch {
@@ -46,72 +108,257 @@ function toMatch(sourceFile: SourceFile, lineNumbers: number[]): UsageMatch {
 
 // ---- method calls ----------------------------------------------------------------
 
-/**
- * Walks a member-access chain like `stripe.charges.create` back to its
- * root identifier, returning that root plus the dotted property path after
- * it. Returns null for anything that isn't a plain identifier-rooted chain
- * (a function call result, a computed index, etc.) — those can't be
- * resolved back to a known client variable, so they're not usages we can
- * confidently match.
- */
-function resolvePropertyPath(expr: Node): { root: string; path: string } | null {
-  const parts: string[] = [];
-  let current: Node = expr;
-  while (Node.isPropertyAccessExpression(current)) {
-    parts.unshift(current.getName());
-    current = current.getExpression();
+/** What one file knows about clients built from the package. */
+interface Clients {
+  packageNames: Set<string>; // bound to the package itself (static use: Stripe.webhooks...)
+  vars: Set<string>; // variables holding a client
+  props: Set<string>; // this.<prop> holding a client
+  resources: Map<string, string>; // name -> path on a client: `const { customers } = stripe`
+}
+
+/** Whether `node` evaluates to a client: `new Stripe(k)`, `Stripe(k)`,
+ * `new S.Stripe(k)`, `require("stripe")(k)`, or a known client variable. */
+function isClient(node: Node, c: Clients, packageName: string): boolean {
+  const n = unwrap(node);
+  if (Node.isIdentifier(n)) return c.vars.has(n.getText());
+  if (Node.isPropertyAccessExpression(n) && unwrap(n.getExpression()).getKind() === SyntaxKind.ThisKeyword) {
+    return c.props.has(n.getName());
   }
-  if (!Node.isIdentifier(current)) return null;
-  return { root: current.getText(), path: parts.join(".") };
+  if (Node.isNewExpression(n) || Node.isCallExpression(n)) {
+    const callee = unwrap(n.getExpression());
+    if (Node.isIdentifier(callee)) return c.packageNames.has(callee.getText());
+    if (Node.isPropertyAccessExpression(callee)) {
+      // new S.Stripe(k), S.default(k), require("stripe").Stripe(k); not a helper like S.createFetchHttpClient()
+      const root = unwrap(callee.getExpression());
+      const fromPackage = (Node.isIdentifier(root) && c.packageNames.has(root.getText())) ||
+        isPackage(requiredModule(root) ?? "", packageName);
+      return fromPackage && (Node.isNewExpression(n) || /^[A-Z]|^default$/.test(callee.getName()));
+    }
+    const mod = requiredModule(callee);
+    return mod !== undefined && isPackage(mod, packageName);
+  }
+  return false;
 }
 
 /**
- * Scans a repo (already checked out locally) for call sites that resolve
- * back to a client instantiated from `packageName`, e.g.
- * findUsages("./repo", "stripe", "charges.create") only matches
- * `stripe.charges.create(...)` where `stripe` was built from an import of
- * "stripe" — not comments, string literals, or unrelated identifiers that
- * merely contain the same text.
+ * The client path a call's receiver resolves to: `stripe.charges.create` ->
+ * "charges.create", `this.stripe["customers"].list` -> "customers.list",
+ * `customers.create` after `const { customers } = stripe` -> "customers.create",
+ * `Stripe.webhooks().constructEvent` -> "webhooks.constructEvent". Null when the
+ * chain doesn't start from a client or the package.
+ */
+function clientPath(expr: Node, c: Clients, packageName: string): string | null {
+  const parts: string[] = [];
+  let current = unwrap(expr);
+  for (;;) {
+    if (Node.isPropertyAccessExpression(current)) {
+      if (isClient(current, c, packageName)) break; // this.stripe
+      parts.unshift(current.getName());
+      current = unwrap(current.getExpression());
+    } else if (Node.isElementAccessExpression(current)) {
+      const arg = current.getArgumentExpression();
+      if (!arg || !(Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg))) return null;
+      parts.unshift(arg.getLiteralValue());
+      current = unwrap(current.getExpression());
+    } else if (Node.isCallExpression(current) && Node.isPropertyAccessExpression(unwrap(current.getExpression()))) {
+      current = unwrap(current.getExpression()); // webhooks() in a chain reads as webhooks
+    } else {
+      break;
+    }
+  }
+  if (Node.isIdentifier(current)) {
+    const name = current.getText();
+    const resource = c.resources.get(name);
+    if (resource !== undefined) return [resource, ...parts].join(".");
+    if (c.vars.has(name) || c.packageNames.has(name)) return parts.join(".");
+    return null;
+  }
+  return isClient(current, c, packageName) ? parts.join(".") : null;
+}
+
+/** Grows `c` with everything in the file that holds a client, until nothing new turns up. */
+function collectClients(sourceFile: SourceFile, c: Clients, packageName: string): void {
+  for (let changed = true; changed; ) {
+    const size = c.vars.size + c.props.size + c.resources.size;
+    for (const decl of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+      const init = decl.getInitializer();
+      const name = decl.getNameNode();
+      if (!init) continue;
+      if (Node.isIdentifier(name)) {
+        if (isClient(init, c, packageName)) c.vars.add(name.getText());
+        else {
+          const path = clientPath(init, c, packageName);
+          if (path) c.resources.set(name.getText(), path); // const customers = stripe.customers
+        }
+      } else if (Node.isObjectBindingPattern(name)) {
+        const base = isClient(init, c, packageName) ? "" : clientPath(init, c, packageName);
+        if (base === null) continue;
+        for (const el of name.getElements()) {
+          const local = el.getNameNode();
+          if (!Node.isIdentifier(local)) continue;
+          const prop = el.getPropertyNameNode()?.getText() ?? local.getText();
+          c.resources.set(local.getText(), base ? `${base}.${prop}` : prop);
+        }
+      }
+    }
+    for (const bin of sourceFile.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+      if (bin.getOperatorToken().getKind() !== SyntaxKind.EqualsToken || !isClient(bin.getRight(), c, packageName)) continue;
+      const left = unwrap(bin.getLeft());
+      if (Node.isIdentifier(left)) c.vars.add(left.getText());
+      else if (Node.isPropertyAccessExpression(left) && unwrap(left.getExpression()).getKind() === SyntaxKind.ThisKeyword) {
+        c.props.add(left.getName());
+      }
+    }
+    for (const prop of sourceFile.getDescendantsOfKind(SyntaxKind.PropertyDeclaration)) {
+      const init = prop.getInitializer();
+      if (init && isClient(init, c, packageName)) c.props.add(prop.getName());
+    }
+    // A TypeScript parameter typed as the client itself: `function charge(stripe: Stripe)`. Not
+    // `Stripe.Customer`, which is a resource the client returns.
+    for (const param of sourceFile.getDescendantsOfKind(SyntaxKind.Parameter)) {
+      const type = param.getTypeNode()?.getText();
+      const name = param.getNameNode();
+      if (type && Node.isIdentifier(name) && c.packageNames.has(type)) c.vars.add(name.getText());
+    }
+    changed = c.vars.size + c.props.size + c.resources.size !== size;
+  }
+}
+
+/** What a file exports that is a client: "default"/"module" for the whole
+ * export, otherwise the export's name. */
+function exportedClients(sourceFile: SourceFile, c: Clients, packageName: string): Set<string> {
+  const out = new Set<string>();
+  for (const stmt of sourceFile.getVariableStatements()) {
+    if (!stmt.isExported()) continue;
+    for (const decl of stmt.getDeclarations()) if (c.vars.has(decl.getName())) out.add(decl.getName());
+  }
+  for (const assignment of sourceFile.getExportAssignments()) {
+    if (isClient(assignment.getExpression(), c, packageName)) out.add("default");
+  }
+  for (const exp of sourceFile.getExportDeclarations()) {
+    if (exp.getModuleSpecifier()) continue;
+    for (const named of exp.getNamedExports()) {
+      if (c.vars.has(named.getName())) out.add(named.getAliasNode()?.getText() ?? named.getName());
+    }
+  }
+  for (const bin of sourceFile.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (bin.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) continue;
+    const left = bin.getLeft().getText();
+    const right = unwrap(bin.getRight());
+    if (left === "module.exports" && isClient(right, c, packageName)) out.add("default");
+    else if (left === "module.exports" && Node.isObjectLiteralExpression(right)) {
+      for (const prop of right.getProperties()) {
+        const name = Node.isShorthandPropertyAssignment(prop) || Node.isPropertyAssignment(prop) ? prop.getName() : undefined;
+        const value = Node.isPropertyAssignment(prop) ? prop.getInitializer() : Node.isShorthandPropertyAssignment(prop) ? prop.getNameNode() : undefined;
+        if (name && value && isClient(value, c, packageName)) out.add(name);
+      }
+    } else {
+      const named = /^(?:module\.)?exports\.(\w+)$/.exec(left);
+      if (named && isClient(right, c, packageName)) out.add(named[1]);
+    }
+  }
+  return out;
+}
+
+/** The repo file a relative import points at, trying the usual extensions and index files. */
+function resolveLocal(from: SourceFile, specifier: string, byPath: Map<string, SourceFile>): SourceFile | undefined {
+  if (!specifier.startsWith(".")) return undefined;
+  const base = path.resolve(path.dirname(from.getFilePath()), specifier);
+  const stem = base.replace(/\.(m|c)?js$/, "");
+  for (const candidate of [base, ...EXTENSIONS.map((e) => `${stem}${e}`), ...EXTENSIONS.map((e) => `${base}/index${e}`)]) {
+    const file = byPath.get(candidate);
+    if (file) return file;
+  }
+  return undefined;
+}
+
+const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+
+/** Adds to `c` the names this file imports from repo modules that export a client. */
+function importClients(sourceFile: SourceFile, c: Clients, exported: Map<SourceFile, Set<string>>,
+                       byPath: Map<string, SourceFile>): void {
+  for (const imp of sourceFile.getImportDeclarations()) {
+    const target = resolveLocal(sourceFile, imp.getModuleSpecifierValue(), byPath);
+    const names = target && exported.get(target);
+    if (!names?.size) continue;
+    const def = imp.getDefaultImport();
+    if (def && names.has("default")) c.vars.add(def.getText());
+    for (const named of imp.getNamedImports()) {
+      if (names.has(named.getName())) c.vars.add(named.getAliasNode()?.getText() ?? named.getName());
+    }
+  }
+  for (const decl of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const init = decl.getInitializer();
+    const spec = init && requiredModule(unwrap(init));
+    const target = spec ? resolveLocal(sourceFile, spec, byPath) : undefined;
+    const names = target && exported.get(target);
+    if (!names?.size) continue;
+    const name = decl.getNameNode();
+    if (Node.isIdentifier(name) && names.has("default")) c.vars.add(name.getText());
+    if (Node.isObjectBindingPattern(name)) {
+      for (const el of name.getElements()) {
+        const prop = el.getPropertyNameNode()?.getText() ?? el.getName();
+        if (names.has(prop)) c.vars.add(el.getName());
+      }
+    }
+  }
+}
+
+/**
+ * Scans a repo (already checked out locally) for call sites that resolve back
+ * to a client built from `packageName`, e.g. findUsages("./repo", "stripe",
+ * "charges.create") matches `stripe.charges.create(...)` however `stripe` got
+ * there: an import or a require, a client built in one module and imported in
+ * another, `this.stripe`, an alias, `const { charges } = stripe`, a TypeScript
+ * parameter typed `Stripe`, or bracket access. Not comments, strings, or
+ * unrelated identifiers that merely contain the same text. A method name equal
+ * to the package's own name (`Stripe`) means calling the package itself.
  */
 export function findUsages(
   repoPath: string,
   packageName: string,
   methodName: string
 ): UsageMatch[] {
-  const matches: UsageMatch[] = [];
-
-  for (const sourceFile of loadSourceFiles(repoPath)) {
-    const imported = importedNames(sourceFile, packageName);
-    if (imported.length === 0) continue;
-
-    // Variables built from the imported package, e.g.
-    // `const stripe = new Stripe(key)` or `const stripe = Stripe(key)`.
-    const clientVars = new Set<string>();
-    for (const decl of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
-      const init = decl.getInitializer();
-      const nameNode = decl.getNameNode();
-      if (!init || !Node.isIdentifier(nameNode)) continue;
-
-      const callee =
-        Node.isNewExpression(init) || Node.isCallExpression(init) ? init.getExpression() : undefined;
-      if (callee && Node.isIdentifier(callee) && imported.includes(callee.getText())) {
-        clientVars.add(nameNode.getText());
-      }
+  const files = loadSourceFiles(repoPath);
+  const byPath = new Map(files.map((f) => [f.getFilePath() as string, f]));
+  const clients = new Map<SourceFile, Clients>();
+  const exported = new Map<SourceFile, Set<string>>();
+  // Two rounds, so a client created in one module and re-exported by a
+  // second is still recognised in a third.
+  for (let round = 0; round < 3; round++) {
+    for (const file of files) {
+      const c = clients.get(file) ?? {
+        packageNames: packageBindings(file, packageName), vars: new Set(), props: new Set(), resources: new Map(),
+      };
+      importClients(file, c, exported, byPath);
+      collectClients(file, c, packageName);
+      clients.set(file, c);
     }
-    if (clientVars.size === 0) continue;
-
-    const lineNumbers: number[] = [];
-    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const resolved = resolvePropertyPath(call.getExpression());
-      if (!resolved || !clientVars.has(resolved.root)) continue;
-      if (resolved.path !== methodName && !resolved.path.endsWith(`.${methodName}`)) continue;
-
-      lineNumbers.push(call.getStartLineNumber());
-    }
-
-    if (lineNumbers.length > 0) matches.push(toMatch(sourceFile, lineNumbers));
+    for (const file of files) exported.set(file, exportedClients(file, clients.get(file)!, packageName));
   }
 
+  const callsPackage = methodName.toLowerCase() === packageName.toLowerCase();
+  const matches: UsageMatch[] = [];
+  for (const file of files) {
+    const c = clients.get(file)!;
+    const lineNumbers: number[] = [];
+    for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (callsPackage) {
+        // Stripe(key) without `new`: a call whose callee is the package itself.
+        const callee = unwrap(call.getExpression());
+        if ((Node.isIdentifier(callee) && c.packageNames.has(callee.getText())) ||
+            isPackage(requiredModule(callee) ?? "", packageName)) {
+          lineNumbers.push(call.getStartLineNumber());
+        }
+        continue;
+      }
+      const resolved = clientPath(call.getExpression(), c, packageName);
+      if (resolved === null) continue;
+      if (resolved !== methodName && !resolved.endsWith(`.${methodName}`)) continue;
+      lineNumbers.push(call.getStartLineNumber());
+    }
+    if (lineNumbers.length > 0) matches.push(toMatch(file, lineNumbers));
+  }
   return matches;
 }
 
@@ -278,7 +525,7 @@ export function findFieldUsages(repoPath: string, packageName: string, fieldPath
   const matches: UsageMatch[] = [];
 
   for (const sourceFile of loadSourceFiles(repoPath)) {
-    if (field.length === 1 && importedNames(sourceFile, packageName).length === 0) continue;
+    if (field.length === 1 && !usesPackage(sourceFile, packageName)) continue;
 
     const lineNumbers: number[] = [];
     const accesses = [

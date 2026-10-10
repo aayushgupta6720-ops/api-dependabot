@@ -1,3 +1,5 @@
+import { REVIEW_MARKER } from "../changes.js";
+
 export interface EvalCase {
   id: string;
   changelogEntry: string;
@@ -159,7 +161,8 @@ async function getCardDetails(cardId) {
   return stripe.issuing.cards.retrieveDetails(cardId);
 }
 `,
-    mustContain: [],
+    // No replacement, so the call becomes an explicit throw flagged for a person.
+    mustContain: [REVIEW_MARKER, /throw new Error\(/],
     mustNotContain: ["retrieveDetails("], // only flags an actual re-invocation, not an explanatory comment
   },
   {

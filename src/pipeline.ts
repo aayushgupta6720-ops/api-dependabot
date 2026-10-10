@@ -1,6 +1,7 @@
 import path from "node:path";
 import { changeTarget, REVIEW_MARKER, type DetectedChange } from "./changes.js";
 import type { PatchResult } from "./llmClient.js";
+import { patchProblem } from "./patchCheck.js";
 import type { ChangeLogEntry } from "./runLog.js";
 import type { UsageMatch } from "./scanner.js";
 
@@ -139,6 +140,11 @@ export async function processChange(
           changeLog.patches.push({ filePath: relativePath, status: "no_change_needed", explanation });
           continue;
         }
+
+        // Nothing checked the model's file before it became a PR: one that doesn't
+        // parse, or that replaced the code instead of fixing it, would have gone out.
+        const problem = patchProblem(relativePath, usage.snippet, patchedCode);
+        if (problem) throw new Error(`patch rejected: ${problem}`);
 
         const prUrl = await deps.openFixPr(
           branch,

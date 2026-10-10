@@ -116,3 +116,77 @@ test("dependencies, type declarations and build output are never scanned", () =>
   assert.deepEqual(lines(findUsages(dir, "stripe", "charges.create")), { "app.js": [3] });
   assert.deepEqual(lines(findFieldUsages(dir, "stripe", EXPIRES_AFTER)), { "app.js": [4] });
 });
+
+// ---- how a client gets to a call site ----------------------------------------------
+
+const CREATE = "customers.create";
+
+test("finds calls on a client however it was built and passed around", () => {
+  const dir = repo({
+    // require("stripe")(key), the style in Stripe's own docs
+    "require-call.js": `const stripe = require("stripe")(process.env.KEY);\nstripe.customers.create({});\n`,
+    // a client shared from one module and imported in others (CommonJS and ESM)
+    "lib/stripe.js": `const Stripe = require("stripe");\nmodule.exports = new Stripe(process.env.KEY);\n`,
+    "uses-shared.js": `const stripe = require("./lib/stripe");\nasync function go() {\n  await stripe.customers.create({});\n}\n`,
+    "lib/client.ts": `import Stripe from "stripe";\nexport const stripe = new Stripe(process.env.KEY!);\n`,
+    "uses-client.ts": `import { stripe as client } from "./lib/client";\nclient.customers.create({});\n`,
+    // this.stripe on a class
+    "service.js": `import Stripe from "stripe";\nclass Billing {\n  constructor() { this.stripe = new Stripe(k); }\n  signUp() { return this.stripe.customers.create({}); }\n}\n`,
+    // a TypeScript parameter typed as the client
+    "param.ts": `import Stripe from "stripe";\nexport async function signUp(stripe: Stripe, c: Stripe.Customer) {\n  return stripe.customers.create({});\n}\n`,
+    // alias, destructuring, bracket access, assignment after declaration, namespace import
+    "forms.js": [
+      `import * as S from "stripe";`,
+      `let stripe;`,
+      `stripe = new S.Stripe(k);`,
+      `const s = stripe;`,
+      `s.customers.create({});`,
+      `const { customers } = stripe;`,
+      `customers.create({});`,
+      `stripe["customers"].create({});`,
+      `const res = stripe.customers;`,
+      `res.create({});`,
+    ].join("\n"),
+    "module.mjs": `import Stripe from "stripe";\nconst stripe = new Stripe(k);\nstripe.customers.create({});\n`,
+    "view.tsx": `import Stripe from "stripe";\nconst stripe = new Stripe(k);\nexport const f = () => stripe.customers.create({});\n`,
+  });
+  assert.deepEqual(lines(findUsages(dir, "stripe", CREATE)), {
+    "require-call.js": [2],
+    "uses-shared.js": [3],
+    "uses-client.ts": [2],
+    "service.js": [4],
+    "param.ts": [3],
+    "forms.js": [5, 7, 8, 10],
+    "module.mjs": [3],
+    "view.tsx": [3],
+  });
+});
+
+test("doesn't match the browser library, unrelated objects or a resource type", () => {
+  const dir = repo({
+    "browser.js": `import { loadStripe } from "@stripe/stripe-js";\nconst stripe = await loadStripe(k);\nstripe.customers.create({});\n`,
+    "db.js": `import Stripe from "stripe";\nconst db = connect();\ndb.customers.create({});\n`,
+    "types.ts": `import Stripe from "stripe";\nexport function f(customer: Stripe.Customer) {\n  return customer.customers.create({});\n}\n`,
+    "helper.js": `const http = require("stripe").createFetchHttpClient();\nhttp.customers.create({});\n`,
+  });
+  assert.deepEqual(findUsages(dir, "stripe", CREATE), []);
+});
+
+test("calling the package itself, and static helpers through a call in the chain", () => {
+  const dir = repo({
+    "ctor.js": `import Stripe from "stripe";\nconst a = Stripe(k);\nconst b = new Stripe(k);\n`,
+    "hooks.js": `import Stripe from "stripe";\nconst event = Stripe.webhooks().constructEvent(body, sig, secret);\n`,
+  });
+  assert.deepEqual(lines(findUsages(dir, "stripe", "Stripe")), { "ctor.js": [2] });
+  assert.deepEqual(lines(findUsages(dir, "stripe", "webhooks.constructEvent")), { "hooks.js": [2] });
+});
+
+test("every eval fixture's code is found by the scanner", async () => {
+  const { cases } = await import("./eval/fixtures.js");
+  const missed = cases.filter((c) => {
+    const dir = repo({ "app.ts": c.beforeCode });
+    const found = c.fieldPath ? findFieldUsages(dir, "stripe", c.fieldPath) : findUsages(dir, "stripe", c.methodName!);
+    return found.length === 0;
+  });
+  assert.deepEqual(missed.map((c) => c.id), []);
+});

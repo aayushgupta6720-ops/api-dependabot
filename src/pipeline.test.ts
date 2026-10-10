@@ -10,7 +10,8 @@ const change: DetectedChange = {
 };
 const opts = { repoPath: "/repo", targetPackage: "stripe" };
 
-/** A fake GitHub + model: remembers the PRs it opened, and can fail a file's first PR. */
+/** A fake GitHub + model: remembers the PRs it opened, and can fail a file's first PR. Files are
+ * real (one-line) code, since a patch that doesn't parse never becomes a PR. */
 function fakes(failFirstPrFor: string[] = []) {
   const prs = new Map<string, string>();
   const failing = new Set(failFirstPrFor);
@@ -18,11 +19,11 @@ function fakes(failFirstPrFor: string[] = []) {
   const deps: PipelineDeps = {
     findUsages: (_repo, _pkg, methodName) => {
       calls.scanned.push(`calls to ${methodName}`);
-      return ["a.js", "b.js"].map((f) => ({ filePath: `/repo/${f}`, lineNumbers: [5], snippet: `old ${f}` }));
+      return ["a.js", "b.js"].map((f) => ({ filePath: `/repo/${f}`, lineNumbers: [5], snippet: `stripe.call("old ${f}");\n` }));
     },
     findFieldUsages: (_repo, _pkg, fieldPath) => {
       calls.scanned.push(`reads of ${fieldPath}`);
-      return [{ filePath: "/repo/c.js", lineNumbers: [9], snippet: "old c.js" }];
+      return [{ filePath: "/repo/c.js", lineNumbers: [9], snippet: 'use("old c.js");\n' }];
     },
     generatePatch: async (_entry, file, code) => {
       calls.generatePatch.push(file);
@@ -122,6 +123,23 @@ test("a field change is scanned for reads of the field, and named after it", asy
   assert.deepEqual(opened, [
     "api-dependabot/v22.7.0-alpha.4-payment_method_details.blik.expires_after-c.js | Fix breaking change: payment_method_details.blik.expires_after",
   ]);
+});
+
+test("a patch that doesn't parse, or replaces the file, never becomes a PR", async () => {
+  for (const patchedCode of ["stripe.call(\"new\";\n", "// fixed\n"]) {
+    const { deps, calls } = fakes();
+    const opened: string[] = [];
+    deps.findUsages = () => [{ filePath: "/repo/a.js", lineNumbers: [1], snippet: 'const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nstripe.call("old");\n' }];
+    deps.generatePatch = async () => ({ explanation: "fixed", patchedCode });
+    deps.openFixPr = async (_branch, file) => (opened.push(file), "https://github.com/me/repo/pull/1");
+
+    const result = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
+
+    assert.deepEqual(opened, []);
+    assert.equal(result.changes[0].patches[0].status, "error");
+    assert.match(result.changes[0].patches[0].error!, /^patch rejected: /);
+    assert.deepEqual(calls.markedSeen, []); // retried on the next run
+  }
 });
 
 test("a patch that only flags the code for review isn't titled a fix", async () => {
