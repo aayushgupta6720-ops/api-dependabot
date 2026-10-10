@@ -5,6 +5,7 @@ import { generatePatch } from "./llmClient.js";
 import { findFixPr, openFixPr } from "./githubClient.js";
 import { processReleases } from "./pipeline.js";
 import { appendRunLog, type RunLogEntry } from "./runLog.js";
+import { installedVersion } from "./versions.js";
 
 // Path to a LOCAL checkout of the repo you're scanning (clone it first).
 const LOCAL_REPO_PATH = "./target-repo";
@@ -23,7 +24,13 @@ async function main() {
 
   try {
     console.log(`Checking ${config.targetPackageRepo} for new breaking changes...`);
-    const releases = await checkForBreakingChanges();
+    const installed = installedVersion(LOCAL_REPO_PATH, config.targetPackage);
+    runLog.installedVersion = installed;
+    console.log(installed
+      ? `${config.targetPackage} ${installed} is installed: reading releases after it.`
+      : `No installed ${config.targetPackage} version found in the repo: reading stable releases only.`);
+    const releases = await checkForBreakingChanges(installed);
+    if (releases.skipped.length > 0) runLog.skippedReleases = releases.skipped;
     runLog.changesFound = releases.changes.length;
     if (releases.notesProblems.length > 0) runLog.notesProblems = releases.notesProblems;
     if (releases.notPatched.length > 0) runLog.notPatched = releases.notPatched;

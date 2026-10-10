@@ -6,8 +6,9 @@
 A multi-step autonomous agent pipeline (detect → scan → patch → PR) that
 watches an SDK's changelog for breaking changes, resolves real usages via
 AST analysis, and uses an LLM to generate and submit fixing pull requests
-without human intervention — going beyond version-bump tools like
-Dependabot by actually patching the affected code.
+without human intervention. Where Dependabot bumps the version and leaves
+the code to you, this patches the code; it doesn't bump the version itself,
+so its PRs are the code half of an upgrade.
 
 Includes an eval harness that replays real breaking-change fixtures
 through the patch generator to catch regressions in output quality, and
@@ -81,6 +82,15 @@ again.
 
 On the very first run there's no "last seen" marker yet, so it only looks at
 the single most recent release — it won't replay the SDK's entire history.
+
+It only reads releases the patched repo will meet. The installed version
+comes from the repo's `package-lock.json`, or else the lowest version its
+`package.json` range allows; releases at or below it are passed over, and so
+are pre-releases (alpha, beta) unless the installed version is one too. A
+repo that names no version gets stable releases only. Passed-over releases
+still count as seen, and the run log and dashboard list them. Before this,
+an alpha's removal was patched into code that, on a stable release, still
+had the field.
 
 Some releases don't carry their notes: stripe-node's recent ones just say
 "See [the changelog](…/CHANGELOG.md#22-7-0-alpha-5) for the full release
@@ -219,7 +229,12 @@ touch the branch.
 To run it by hand, use `gh workflow run agent.yml`, or add `-f eval=true`
 to run the eval harness instead. A run whose agent step fails still saves
 and publishes its log entry, error included, and is then marked failed so
-GitHub sends an email. GitHub switches off schedules in a public repo after
+GitHub sends an email. Failures stay in the history: a run that failed
+because of the deployment (a mistyped token secret) is labelled a setup
+error, and an eval case that failed only because the model call did (a 429
+or 503) is counted as not judged, in grey, rather than as a wrong patch. Two
+such entries were deleted from the history in September and have been put
+back. GitHub switches off schedules in a public repo after
 60 days with no activity. If that happens, re-enable the workflow in the
 Actions tab.
 

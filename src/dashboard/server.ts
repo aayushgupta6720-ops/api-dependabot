@@ -51,6 +51,9 @@ interface EvalSummary {
   timestamp: string;
   passed: number;
   total: number;
+  // Cases that failed only because the model call errored (a 429 or 503 from
+  // Gemini): the patch was never judged, so they say nothing about its quality.
+  modelErrors: number;
 }
 
 function readEvals(paths: DashboardPaths): EvalSummary[] {
@@ -70,6 +73,9 @@ function readEvals(paths: DashboardPaths): EvalSummary[] {
       timestamp: file.replace(/\.json$/, ""),
       passed: results.filter((r) => r.pass).length,
       total: results.length,
+      modelErrors: results.filter(
+        (r) => !r.pass && r.failures.length > 0 && r.failures.every((f) => f.startsWith("error:"))
+      ).length,
     });
   }
   return summaries.sort((a, b) => b.file.localeCompare(a.file));

@@ -47,3 +47,19 @@ test("a field change says it's a field", () => {
   }] }]);
   assert.ok(html.includes("field payment_method_details.blik.&lt;b&gt;expires_after&lt;/b&gt; (2 usages)"));
 });
+
+test("an eval whose failures were all model errors is shown as not judged, not as wrong patches", () => {
+  const html: string = render.renderEvals([
+    { timestamp: "a", passed: 6, total: 13, modelErrors: 7 },
+    { timestamp: "b", passed: 6, total: 13, modelErrors: 2 },
+  ]);
+  const [first, second] = html.split("<tr>").slice(2);
+  assert.ok(first.includes("badge-skip") && first.includes("7 not judged"));
+  assert.ok(second.includes("badge-error") && second.includes("2 not judged"));
+});
+
+test("a setup failure is labelled as one", () => {
+  const html: string = render.renderRuns([{ startedAt: "2026-09-28T21:03:40Z", changesFound: 0, changes: [],
+    error: "Bad credentials", errorKind: "setup" }]);
+  assert.ok(html.includes("setup error (not the agent): Bad credentials"));
+});

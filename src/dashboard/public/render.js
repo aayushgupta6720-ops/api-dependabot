@@ -47,8 +47,10 @@ export function renderRuns(runs) {
     <tbody>
       ${runs.map((run) => `
         <tr>
-          <td>${esc(fmtTime(run.startedAt))}${run.error ? `<br><span class="badge badge-error">run error: ${esc(run.error)}</span>` : ""}${
-            (run.notesProblems ?? []).map((p) => `<br><span class="badge badge-error">notes problem: ${esc(p)}</span>`).join("")}</td>
+          <td>${esc(fmtTime(run.startedAt))}${run.error ? `<br><span class="badge badge-error">${run.errorKind === "setup" ? "setup error (not the agent)" : "run error"}: ${esc(run.error)}</span>` : ""}${
+            (run.notesProblems ?? []).map((p) => `<br><span class="badge badge-error">notes problem: ${esc(p)}</span>`).join("")}${
+            "installedVersion" in run ? `<br><span class="muted">installed: ${esc(run.installedVersion ?? "unknown (stable releases only)")}</span>` : ""}${
+            run.skippedReleases?.length ? `<br><span class="badge badge-skip">${esc(run.skippedReleases.length)} release(s) passed over</span>` : ""}</td>
           <td>${esc(run.changesFound)}</td>
           <td>
             ${run.changes.map((c) => `
@@ -74,7 +76,8 @@ export function renderEvals(evals) {
       ${evals.map((e) => `
         <tr>
           <td>${esc(e.timestamp)}</td>
-          <td><span class="badge ${e.passed === e.total ? "badge-ok" : "badge-error"}">${esc(e.passed)}/${esc(e.total)} passed</span></td>
+          <td><span class="badge ${e.passed === e.total ? "badge-ok" : e.passed + (e.modelErrors ?? 0) === e.total ? "badge-skip" : "badge-error"}">${esc(e.passed)}/${esc(e.total)} passed</span>${
+            e.modelErrors ? ` <span class="muted">${esc(e.modelErrors)} not judged: the model call failed (rate limit or overload)</span>` : ""}</td>
         </tr>
       `).join("")}
     </tbody>

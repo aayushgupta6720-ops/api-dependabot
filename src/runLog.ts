@@ -32,7 +32,14 @@ export interface RunLogEntry {
   notesProblems?: string[];
   // Breaking changes with no method call or field read to patch, with why
   notPatched?: { version: string; entry: string }[];
+  // The SDK version the patched repo has (null: it doesn't say), and the
+  // releases passed over because that repo won't meet them
+  installedVersion?: string | null;
+  skippedReleases?: string[];
   error?: string;
+  // "setup" for a failure of the deployment rather than the agent (a wrong
+  // token secret), labelled so on the dashboard instead of being removed.
+  errorKind?: "setup";
 }
 
 /** Appends one run as a single line of JSON to run-log.jsonl. */

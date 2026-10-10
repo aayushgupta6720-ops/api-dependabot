@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { config } from "./config.js";
 import { extractBreakingChanges, type DetectedChange } from "./llmClient.js";
 import { resolveReleaseNotes } from "./releaseNotes.js";
+import { isRelevant } from "./versions.js";
 
 const octokit = new Octokit({ auth: config.githubToken });
 const [owner, repo] = config.targetPackageRepo.split("/");
@@ -33,6 +34,8 @@ export interface NewReleases {
   notesProblems: string[];
   // Breaking changes with no method call or field read to patch, with why.
   notPatched: { version: string; entry: string }[];
+  // Releases not read because the repo won't meet them (see versions.isRelevant).
+  skipped: string[];
 }
 
 /** One file of a GitHub repo at a ref, as text. */
@@ -55,7 +58,7 @@ export async function fetchRepoFile(repoFullName: string, ref: string, filePath:
  * marker itself: the caller does that with markReleasesSeen once every change
  * has been handled, so a failed patch or PR is retried on the next run.
  */
-export async function checkForBreakingChanges(): Promise<NewReleases> {
+export async function checkForBreakingChanges(installed: string | null = null): Promise<NewReleases> {
   const state = loadState();
 
   const { data: releases } = await octokit.repos.listReleases({
@@ -77,8 +80,11 @@ export async function checkForBreakingChanges(): Promise<NewReleases> {
   const markerLost = state.lastSeenTag !== null && lastSeenIndex === -1;
   const unseen = lastSeenIndex === -1 ? ordered.slice(-1) : ordered.slice(lastSeenIndex + 1);
 
+  // Releases the repo won't meet (older than what it has installed, or a
+  // pre-release when it's on stable) are passed over; they still count as seen.
+  const skipped = unseen.filter((r) => !isRelevant(r.tag_name, installed)).map((r) => r.tag_name);
   const releasesWithNotes = unseen
-    .filter((r) => r.body)
+    .filter((r) => r.body && isRelevant(r.tag_name, installed))
     .map((r) => ({ version: r.tag_name, notes: r.body! }));
 
   // A release whose notes are just "see the changelog" gets its section of it.
@@ -104,6 +110,7 @@ export async function checkForBreakingChanges(): Promise<NewReleases> {
     latestTag: unseen.length > 0 ? unseen[unseen.length - 1].tag_name : null,
     notesProblems: problems,
     notPatched: found.notPatched,
+    skipped,
   };
 }
 
