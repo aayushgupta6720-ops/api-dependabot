@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_SECTION_CHARS, changelogSection, pointedChangelog, resolveReleaseNotes } from "./releaseNotes.js";
+import { MAX_SECTION_CHARS, changelogSection, pointedChangelog, resolveReleaseNotes, splitNotes } from "./releaseNotes.js";
 
 const WATCHED = "stripe/stripe-node";
 const pointer = (anchor: string) =>
@@ -92,13 +92,38 @@ test("a changelog that can't be fetched, or lacks the release, is reported, not 
   assert.match(missing.problems[0], /no section for this release/);
 });
 
-test("an oversized section is cut to the limit", async () => {
-  const huge = `## <a id="1-0-0"></a>1.0.0\n${"* ⚠️ Remove `x`\n".repeat(5000)}`;
-  const { releases } = await resolveReleaseNotes(
-    [{ version: "v1.0.0", notes: pointer("1-0-0") }],
-    WATCHED,
-    async () => huge
-  );
-  assert.ok(releases[0].notes.length <= MAX_SECTION_CHARS + "\n[truncated]".length);
-  assert.ok(releases[0].notes.endsWith("[truncated]"));
+test("a long section is kept whole, and only an absurd one is reported instead of cut", async () => {
+  const section = (n: number) => `## <a id="1-0-0"></a>1.0.0\n${"* ⚠️ Remove `x`\n".repeat(n)}`;
+  const long = await resolveReleaseNotes([{ version: "v1.0.0", notes: pointer("1-0-0") }], WATCHED, async () => section(6000));
+  assert.equal(long.releases[0].notes, section(6000).trim());
+  assert.deepEqual(long.problems, []);
+
+  const absurd = await resolveReleaseNotes([{ version: "v1.0.0", notes: pointer("1-0-0") }], WATCHED, async () => section(20000));
+  assert.ok(MAX_SECTION_CHARS < section(20000).length);
+  assert.match(absurd.problems[0], /over the 250000 read/);
+});
+
+test("notes are split between top-level items, keeping each item's sub-items, and nothing is lost", () => {
+  const notes = [
+    "This release changes the pinned API version.",
+    "* ⚠️ Remove `a`",
+    "  - from `A.create`",
+    "  - and `A.update`",
+    "* ⚠️ Remove `b`",
+    "* Add `c`",
+  ].join("\n");
+  const pieces = splitNotes(notes, 60);
+  assert.deepEqual(pieces, [
+    "This release changes the pinned API version.",
+    "* ⚠️ Remove `a`\n  - from `A.create`\n  - and `A.update`",
+    "* ⚠️ Remove `b`\n* Add `c`",
+  ]);
+  assert.equal(pieces.join("\n"), notes);
+});
+
+test("an item or a line longer than a piece is broken up rather than dropped", () => {
+  const long = `* ${"x".repeat(25)}\n  - ${"y".repeat(8)}`;
+  const pieces = splitNotes(long, 10);
+  assert.ok(pieces.every((p) => p.length <= 10), JSON.stringify(pieces));
+  assert.equal(pieces.join("").replace(/\n/g, ""), long.replace(/\n/g, ""));
 });

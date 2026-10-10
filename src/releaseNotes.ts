@@ -25,8 +25,10 @@ export type FetchFile = (repo: string, ref: string, path: string) => Promise<str
 // real notes run to thousands. Longer notes are used as they are, even if
 // they also link to the changelog.
 const POINTER_MAX_CHARS = 300;
-// The largest stripe-node section so far is ~32,000 chars.
-export const MAX_SECTION_CHARS = 40_000;
+// A section past this is reported rather than read. stripe-node's v23.0.0
+// is 45,500 characters, read in pieces (see splitNotes); one many times that
+// would be a changelog the watcher has misparsed, or one too costly to read.
+export const MAX_SECTION_CHARS = 250_000;
 
 const LINK_RE = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/blob\/([^/\s)#]+)\/([^\s)#]+)#([\w.-]+)/;
 
@@ -95,12 +97,9 @@ export async function resolveReleaseNotes(
       const section = changelogSection(await files.get(file)!, link.anchor, release.version);
       if (section === null) throw new Error("it has no section for this release");
       if (section.length > MAX_SECTION_CHARS) {
-        console.warn(`${release.version}: changelog section cut to ${MAX_SECTION_CHARS} characters`);
+        throw new Error(`its section is ${section.length} characters, over the ${MAX_SECTION_CHARS} read`);
       }
-      resolved.push({
-        version: release.version,
-        notes: section.length > MAX_SECTION_CHARS ? `${section.slice(0, MAX_SECTION_CHARS)}\n[truncated]` : section,
-      });
+      resolved.push({ version: release.version, notes: section });
     } catch (err) {
       problems.push(`${release.version}: its notes are a link to ${file}, which couldn't be read (${(err as Error).message})`);
       resolved.push(release);
@@ -108,4 +107,39 @@ export async function resolveReleaseNotes(
   }
 
   return { releases: resolved, problems };
+}
+
+/**
+ * `notes` in pieces of at most `max` characters, for the model to read one at
+ * a time. A piece breaks before a top-level list item or heading, so an item
+ * stays with its sub-items; an item longer than `max` breaks between lines,
+ * and a line longer than that is cut. Nothing is dropped.
+ */
+export function splitNotes(notes: string, max: number): string[] {
+  const items: string[] = [];
+  for (const line of notes.split("\n")) {
+    if (items.length === 0 || /^(?:[*+-]\s|#)/.test(line)) items.push(line);
+    else items[items.length - 1] += `\n${line}`;
+  }
+
+  const pieces: string[] = [];
+  let current = "";
+  const add = (text: string) => {
+    if (current && current.length + 1 + text.length > max) {
+      pieces.push(current);
+      current = "";
+    }
+    current = current ? `${current}\n${text}` : text;
+  };
+  for (const item of items) {
+    if (item.length <= max) {
+      add(item);
+      continue;
+    }
+    for (const line of item.split("\n")) {
+      for (let i = 0; i < Math.max(line.length, 1); i += max) add(line.slice(i, i + max));
+    }
+  }
+  if (current) pieces.push(current);
+  return pieces;
 }

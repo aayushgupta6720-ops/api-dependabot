@@ -273,7 +273,8 @@ function destructuredBase(pattern: Node): string[] | undefined {
  */
 export function findFieldUsages(repoPath: string, packageName: string, fieldPath: string): UsageMatch[] {
   const field = fieldSegments(fieldPath);
-  if (field.length === 0) return [];
+  // With no name in it ("*", "[]"), every property read would match.
+  if (!field.some((segment) => segment !== ELEMENT && segment !== ANY)) return [];
   const matches: UsageMatch[] = [];
 
   for (const sourceFile of loadSourceFiles(repoPath)) {

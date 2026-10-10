@@ -75,6 +75,22 @@ only follows links into `TARGET_PACKAGE_REPO` itself. If the section can't
 be read, the run log and dashboard say so and the release stays unseen, so
 its breaking changes aren't silently missed.
 
+Long notes are read in pieces of about 12,000 characters, split between
+list items, and small releases share a request. Every item the notes mark
+as breaking (⚠️, "BREAKING CHANGE" or a "Breaking changes" heading) has to
+come back either as a change to patch or as one with nothing to patch, with
+the reason: a removed export, a dropped Node version, a field that became
+required. The dashboard lists those too. The releases stay unseen, and the
+next run reads them again, if the reply isn't in the expected shape, if a
+change can't be scanned for, or if a piece marks breaking changes and gets
+nothing back.
+
+This replaced a cut at 40,000 characters. stripe-node's v23.0.0 section is
+45,500 characters with 26 items marked breaking; cut and sent in one prompt
+with the three releases after it, it came back with none, and the run marked
+it seen. Read in pieces in a dry run, the same four releases gave 54 changes
+to scan for and 22 breaking items with nothing to patch.
+
 The marker only moves once every change from those releases has been
 handled. If a patch or PR fails, the releases stay unseen and the next run
 retries them. Each fix goes on a branch named after its change and file
@@ -90,8 +106,9 @@ The free tier allows it 500 requests/day per Google project. The bigger
 requests/day each, and a single `npm run eval` uses 10.
 
 `npm run dev` makes no Gemini calls when there are no new releases.
-Otherwise it makes one call to extract breaking changes from all new
-releases at once, plus one per affected file for each breaking change.
+Otherwise it makes one call per 12,000 characters of new release notes to
+extract breaking changes (stripe-node's four releases after v22.7.0-alpha.5
+took 9), plus one per affected file for each breaking change.
 The key goes in an `x-goog-api-key` header rather than the URL, where
 proxies and request logs would record it.
 

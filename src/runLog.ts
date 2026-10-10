@@ -28,8 +28,10 @@ export interface RunLogEntry {
   targetPackageRepo: string;
   changesFound: number;
   changes: ChangeLogEntry[];
-  // Releases whose notes only link to a changelog that couldn't be read
+  // Why releases' notes may have been missed or misread; they stay unseen
   notesProblems?: string[];
+  // Breaking changes with no method call or field read to patch, with why
+  notPatched?: { version: string; entry: string }[];
   error?: string;
 }
 

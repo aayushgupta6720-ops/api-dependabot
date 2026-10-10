@@ -99,6 +99,11 @@ test("a one-segment field is only looked for in files that use the package", () 
   assert.deepEqual(lines(findFieldUsages(dir, "stripe", "livemode")), { "uses-sdk.js": [3] });
 });
 
+test("a field path with no name in it matches nothing, rather than every read", () => {
+  const dir = repo({ "uses-sdk.js": `import Stripe from "stripe";\nconst list = await stripe.v2.core.accounts.list();\nif (list.has_more) next(list.url);\n` });
+  for (const path of ["*", "[]", "*.*", "*[]"]) assert.deepEqual(findFieldUsages(dir, "stripe", path), [], path);
+});
+
 test("dependencies, type declarations and build output are never scanned", () => {
   const code = `import Stripe from "stripe";\nconst stripe = new Stripe(k);\nstripe.charges.create({});\nuse(m.payment_method_details.blik.expires_after);\n`;
   const dir = repo({

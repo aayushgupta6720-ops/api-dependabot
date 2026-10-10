@@ -27,10 +27,12 @@ export interface NewReleases {
   // The newest release looked at, to pass to markReleasesSeen once its
   // changes are handled; null when there was nothing new.
   latestTag: string | null;
-  // Releases whose notes are only a link to the changelog, where the linked
-  // section couldn't be read. Their breaking changes may have been missed,
-  // so they shouldn't be marked seen.
+  // Why some releases' breaking changes may have been missed: notes that
+  // couldn't be read, or that the model misread. Those releases shouldn't be
+  // marked seen.
   notesProblems: string[];
+  // Breaking changes with no method call or field read to patch, with why.
+  notPatched: { version: string; entry: string }[];
 }
 
 /** One file of a GitHub repo at a ref, as text. */
@@ -59,7 +61,7 @@ export async function checkForBreakingChanges(): Promise<NewReleases> {
   const { data: releases } = await octokit.repos.listReleases({
     owner,
     repo,
-    per_page: 20,
+    per_page: 100,
   });
 
   // GitHub returns newest first; walk oldest-to-newest so the state marker
@@ -70,10 +72,10 @@ export async function checkForBreakingChanges(): Promise<NewReleases> {
     ? ordered.findIndex((r) => r.tag_name === state.lastSeenTag)
     : -1;
 
-  const unseen =
-    lastSeenIndex === -1
-      ? ordered.slice(-1) // first run (or marker fell off the page): just the latest release
-      : ordered.slice(lastSeenIndex + 1);
+  // On the first run, just the latest release. A marker that's no longer in
+  // the list used to be treated the same way, skipping every release between.
+  const markerLost = state.lastSeenTag !== null && lastSeenIndex === -1;
+  const unseen = lastSeenIndex === -1 ? ordered.slice(-1) : ordered.slice(lastSeenIndex + 1);
 
   const releasesWithNotes = unseen
     .filter((r) => r.body)
@@ -85,15 +87,23 @@ export async function checkForBreakingChanges(): Promise<NewReleases> {
     config.targetPackageRepo,
     fetchRepoFile
   );
-  for (const problem of problems) console.warn(problem);
+  if (markerLost) {
+    problems.push(`the last seen release, ${state.lastSeenTag}, isn't among the latest ${ordered.length}, so releases since it weren't read`);
+  }
 
   const found =
-    readable.length > 0 ? await extractBreakingChanges(config.targetPackage, readable) : [];
+    readable.length > 0
+      ? await extractBreakingChanges(config.targetPackage, readable)
+      : { changes: [], notPatched: [], problems: [] };
+  problems.push(...found.problems);
+  for (const problem of problems) console.warn(problem);
+  for (const item of found.notPatched) console.log(`Breaking, nothing to patch: ${item.entry}`);
 
   return {
-    changes: found,
+    changes: found.changes,
     latestTag: unseen.length > 0 ? unseen[unseen.length - 1].tag_name : null,
     notesProblems: problems,
+    notPatched: found.notPatched,
   };
 }
 

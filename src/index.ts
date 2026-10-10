@@ -26,6 +26,7 @@ async function main() {
     const releases = await checkForBreakingChanges();
     runLog.changesFound = releases.changes.length;
     if (releases.notesProblems.length > 0) runLog.notesProblems = releases.notesProblems;
+    if (releases.notPatched.length > 0) runLog.notPatched = releases.notPatched;
 
     if (releases.changes.length === 0) {
       console.log("No new breaking changes found.");

@@ -48,7 +48,7 @@ export function renderRuns(runs) {
       ${runs.map((run) => `
         <tr>
           <td>${esc(fmtTime(run.startedAt))}${run.error ? `<br><span class="badge badge-error">run error: ${esc(run.error)}</span>` : ""}${
-            (run.notesProblems ?? []).map((p) => `<br><span class="badge badge-error">unread notes: ${esc(p)}</span>`).join("")}</td>
+            (run.notesProblems ?? []).map((p) => `<br><span class="badge badge-error">notes problem: ${esc(p)}</span>`).join("")}</td>
           <td>${esc(run.changesFound)}</td>
           <td>
             ${run.changes.map((c) => `
@@ -58,6 +58,7 @@ export function renderRuns(runs) {
                 <div>${c.patches.map(badge).join(" ")}</div>
               </div>
             `).join("")}
+            ${(run.notPatched ?? []).map((n) => `<div><strong>${esc(n.version)}</strong> <span class="badge badge-skip">breaking, nothing to patch</span> ${esc(n.entry)}</div>`).join("")}
           </td>
         </tr>
       `).join("")}
