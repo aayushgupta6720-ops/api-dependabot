@@ -78,8 +78,8 @@ function listCustomers(onDone) {
     beforeCode: `import Stripe from "stripe";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-function handleWebhook(payload) {
-  return stripe.parseThinEvent(payload);
+function handleWebhook(payload, signature, secret) {
+  return stripe.parseThinEvent(payload, signature, secret);
 }
 `,
     mustContain: ["parseEventNotification"],
@@ -110,7 +110,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 async function createAlert(meterId) {
   return stripe.billing.alerts.create({
     alert_type: "usage_threshold",
-    usage_threshold_config: { gte: 1000, meter: meterId },
+    title: "Usage over 1,000",
+    usage_threshold_config: { gte: 1000, meter: meterId, recurrence: "one_time" },
   });
 }
 `,

@@ -182,6 +182,15 @@ invented or a parameter it misnamed. The original's own errors (often the
 breaking change itself) don't count against it. stripe 6.21.0 ships no
 types, so that one case is only parsed.
 
+The first run with type checks (2026-10-11) scored 12/13. It caught a patch
+the substring checks had passed: for v22's "pass the API key in the
+RequestOptions object", the model wrote `customers.retrieve(id, { apiKey })`,
+which puts it in the params; v22 declares `retrieve(id, params?, options?)`,
+so it belongs third. It also showed two fixtures that were never
+type-correct, which the breaking-change error had hidden: a webhook call
+with one argument of three, and an alert missing its required `title` and
+`recurrence`. Both were fixed, so a correct patch now leaves no type errors.
+
 ```bash
 npm run eval:e2e
 ```
