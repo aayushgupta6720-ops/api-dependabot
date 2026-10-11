@@ -516,9 +516,74 @@ function destructuredBase(pattern: Node): string[] | undefined {
  * There's no type information in plain JS, so this matches on the path
  * itself (see readsField). A one-segment field (`livemode`) is too common a
  * name to match anywhere, so it's only looked for in files that import the
- * package. A false match costs a model call that finds nothing to change.
+ * package. Given the `resource` whose objects carry the field ("customers"),
+ * a read whose object the code shows came from another resource is skipped.
+ * A false match costs a model call, and the model doesn't always find
+ * nothing to change: in the end-to-end eval it once "fixed" a balance's
+ * `currency` for a change to Customer's.
  */
-export function findFieldUsages(repoPath: string, packageName: string, fieldPath: string): UsageMatch[] {
+/** The names in a call's callee, root first: `stripe.issuing.cards.retrieve` ->
+ * [stripe, issuing, cards, retrieve]. Undefined unless it's a plain chain of names. */
+function calleeNames(callee: Node): string[] | undefined {
+  const names: string[] = [];
+  let current: Node = callee;
+  while (Node.isPropertyAccessExpression(current)) {
+    names.unshift(current.getName());
+    current = current.getExpression();
+  }
+  return Node.isIdentifier(current) ? [current.getText(), ...names] : undefined;
+}
+
+/**
+ * The client resource the object a read starts from came from, when the code
+ * shows it: "balance" for `b.currency` in
+ * `const balance = await stripe.balance.retrieve(); balance.available.map((b) => b.currency)`.
+ * Followed through awaits, array callbacks and for-of loops, destructuring
+ * and aliases (`const lines = page.data`). Undefined when the code doesn't say
+ * (a parameter, an import, a `.then` callback).
+ */
+function originResource(node: Node, seen = new Set<Node>()): string | undefined {
+  let current: Node = node;
+  while (
+    Node.isPropertyAccessExpression(current) ||
+    Node.isElementAccessExpression(current) ||
+    Node.isNonNullExpression(current) ||
+    Node.isParenthesizedExpression(current) ||
+    Node.isAwaitExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  if (Node.isCallExpression(current)) {
+    const names = calleeNames(current.getExpression());
+    return names && names.length >= 3 ? names.slice(1, -1).join(".") : undefined;
+  }
+  if (!Node.isIdentifier(current) || seen.has(current)) return undefined;
+  seen.add(current);
+  const collection = iteratedCollection(current.getText(), current);
+  if (collection) return originResource(collection, seen);
+  let holder: Node | undefined = current.getSymbol()?.getDeclarations()[0];
+  while (holder && Node.isBindingElement(holder)) holder = holder.getParent()?.getParent();
+  const init = holder && Node.isVariableDeclaration(holder) ? holder.getInitializer() : undefined;
+  return init ? originResource(init, seen) : undefined;
+}
+
+/** Whether objects from `origin` can carry `resource`'s field: the same resource,
+ * or one whose path reads through the resource's object by name (an expanded
+ * `invoice.customer.currency` is a Customer's currency, read off an invoice). */
+function fromResource(origin: string, resource: string, path: string[]): boolean {
+  const norm = (r: string) => r.toLowerCase().replace(/[^a-z0-9.]/g, "");
+  const [a, b] = [norm(origin), norm(resource)];
+  if (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)) return true;
+  const singular = b.split(".").at(-1)!.replace(/ies$/, "y").replace(/s$/, "");
+  return path.some((segment) => norm(segment) === singular);
+}
+
+export function findFieldUsages(
+  repoPath: string,
+  packageName: string,
+  fieldPath: string,
+  resource?: string
+): UsageMatch[] {
   const field = fieldSegments(fieldPath);
   // With no name in it ("*", "[]"), every property read would match.
   if (!field.some((segment) => segment !== ELEMENT && segment !== ANY)) return [];
@@ -533,13 +598,23 @@ export function findFieldUsages(repoPath: string, packageName: string, fieldPath
       ...sourceFile.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
     ];
     for (const access of accesses) {
-      if (readsField(accessPath(access), field)) lineNumbers.push(access.getStartLineNumber());
+      const path = accessPath(access);
+      if (!readsField(path, field)) continue;
+      // A read off another resource's object isn't this change's: `currency`
+      // becoming nullable on Customer says nothing about a balance's currency.
+      const origin = resource ? originResource(access) : undefined;
+      if (origin !== undefined && !fromResource(origin, resource!, path)) continue;
+      lineNumbers.push(access.getStartLineNumber());
     }
     for (const pattern of sourceFile.getDescendantsOfKind(SyntaxKind.ObjectBindingPattern)) {
       if (!Node.isObjectBindingPattern(pattern.getParent()?.getParent())) {
         // only outermost patterns; destructuredPaths walks the nested ones
         const base = destructuredBase(pattern);
-        if (base && destructuredPaths(pattern, base).some((path) => readsField(path, field))) {
+        const paths = base ? destructuredPaths(pattern, base).filter((path) => readsField(path, field)) : [];
+        const holder = pattern.getParent();
+        const init = resource && Node.isVariableDeclaration(holder) ? holder.getInitializer() : undefined;
+        const origin = init ? originResource(init) : undefined;
+        if (paths.some((path) => origin === undefined || fromResource(origin, resource!, path))) {
           lineNumbers.push(pattern.getStartLineNumber());
         }
       }

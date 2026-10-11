@@ -79,14 +79,30 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
 
+      # The SDK release each case comes from, to type-check its patches against.
+      # Downloaded here, without the secrets, so the eval step never runs npm.
+      - name: Download the SDK versions the eval checks against
+        if: env.EVAL_RUN == 'true'
+        run: npm run eval:sdks
+
       # A failing case is a result to show on the dashboard, not a broken run.
+      # Three samples per case: one patch says little about a model whose output varies.
       - name: Run the eval harness
         if: env.EVAL_RUN == 'true'
         continue-on-error: true
-        run: npm run eval
+        run: npm run eval -- --samples 3
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }} # config.ts requires one; the evals never call GitHub
+
+      # One real release through extraction, the scanner and the patches; results go to eval-results/e2e/.
+      - name: Run the end-to-end eval
+        if: env.EVAL_RUN == 'true'
+        continue-on-error: true
+        run: npm run eval:e2e
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Save state
         run: |

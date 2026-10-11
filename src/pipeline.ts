@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { changeTarget, REVIEW_MARKER, type DetectedChange } from "./changes.js";
 import type { PatchResult } from "./llmClient.js";
@@ -9,7 +10,7 @@ import type { UsageMatch } from "./scanner.js";
  * imports above) so tests can use fakes without API keys or network. */
 export interface PipelineDeps {
   findUsages(repoPath: string, packageName: string, methodName: string): UsageMatch[];
-  findFieldUsages(repoPath: string, packageName: string, fieldPath: string): UsageMatch[];
+  findFieldUsages(repoPath: string, packageName: string, fieldPath: string, resource?: string): UsageMatch[];
   generatePatch(changelogEntry: string, affectedFilePath: string, affectedCode: string): Promise<PatchResult>;
   findFixPr(branch: string): Promise<string | null>;
   openFixPr(branch: string, filePath: string, content: string, title: string, body: string): Promise<string>;
@@ -63,13 +64,16 @@ export interface PipelineOptions {
 }
 
 /**
- * The branch for one change's fix to one file. The same change and file
- * always give the same name, so a retry can find the PR an earlier run opened
- * instead of opening a second one. Only characters git allows anywhere in a
- * ref name, with no "..", and no leading or trailing "." or "-".
+ * The branch for one change's fix to one file. It's keyed on the release and
+ * the changelog item that states the change, which the notes fix, so a retry
+ * finds the PR an earlier run opened even if the model named the change
+ * differently this time; a change with no item recorded is keyed on its method
+ * or field. Only characters git allows anywhere in a ref name, with no "..",
+ * and no leading or trailing "." or "-".
  */
 export function fixBranchName(change: DetectedChange, relativePath: string): string {
-  const slug = `${change.version}-${changeTarget(change)}-${relativePath}`
+  const id = change.source ? sourceKey(change).slice(0, 12) : changeTarget(change);
+  const slug = `${change.version}-${id}-${relativePath}`
     .replace(/[^A-Za-z0-9._-]+/g, "-")
     .replace(/\.{2,}/g, ".")
     .replace(/-{2,}/g, "-")
@@ -78,13 +82,44 @@ export function fixBranchName(change: DetectedChange, relativePath: string): str
   return `api-dependabot/${slug}`;
 }
 
+/** A hash of a change's release and changelog item, ignoring whitespace. */
+function sourceKey(change: DetectedChange): string {
+  return createHash("sha256")
+    .update(`${change.version}\n${(change.source ?? "").replace(/\s+/g, " ").trim()}`)
+    .digest("hex");
+}
+
+/** What one fix PR answers: the changes stated in one changelog item share a
+ * branch per file, so the first of them to reach a file gets a patch for all
+ * of them, and the rest find its PR. */
+export interface FixScope {
+  entry: string; // every entry from the item, for the patch prompt and the PR body
+  targets: string[]; // their methods and fields, for the PR title
+}
+
+/** Each change's FixScope: its own, or its changelog item's. */
+export function fixScopes(changes: DetectedChange[]): FixScope[] {
+  const byItem = new Map<string, FixScope>();
+  for (const change of changes) {
+    if (!change.source) continue;
+    const scope = byItem.get(sourceKey(change)) ?? { entry: "", targets: [] };
+    scope.entry = scope.entry ? `${scope.entry}\n${change.entry}` : change.entry;
+    if (!scope.targets.includes(changeTarget(change))) scope.targets.push(changeTarget(change));
+    byItem.set(sourceKey(change), scope);
+  }
+  return changes.map((c) =>
+    c.source ? byItem.get(sourceKey(c))! : { entry: c.entry, targets: [changeTarget(c)] }
+  );
+}
+
 /** Scan for one change's call sites and open a fix PR per affected file.
  * A failure is recorded in the returned entry, never thrown, so later files
  * and changes still get processed. */
 export async function processChange(
   change: DetectedChange,
   deps: PipelineDeps,
-  opts: PipelineOptions
+  opts: PipelineOptions,
+  scope: FixScope = { entry: change.entry, targets: [changeTarget(change)] }
 ): Promise<ChangeLogEntry> {
   const changeLog: ChangeLogEntry = {
     version: change.version,
@@ -99,7 +134,7 @@ export async function processChange(
     let usages;
     if (change.fieldPath) {
       console.log(`Scanning ${opts.repoPath} for reads of "${change.fieldPath}"...`);
-      usages = deps.findFieldUsages(opts.repoPath, opts.targetPackage, change.fieldPath);
+      usages = deps.findFieldUsages(opts.repoPath, opts.targetPackage, change.fieldPath, change.resource);
     } else {
       console.log(`Scanning ${opts.repoPath} for calls to "${change.methodName}"...`);
       usages = deps.findUsages(opts.repoPath, opts.targetPackage, change.methodName ?? "");
@@ -129,7 +164,7 @@ export async function processChange(
           continue;
         }
 
-        const patch = await deps.generatePatch(change.entry, usage.filePath, usage.snippet);
+        const patch = await deps.generatePatch(scope.entry, usage.filePath, usage.snippet);
         const { explanation } = patch;
         const patchedCode = matchFileEnding(patch.patchedCode, usage.snippet);
 
@@ -150,8 +185,8 @@ export async function processChange(
           branch,
           relativePath,
           patchedCode,
-          fixPrTitle(changeTarget(change), patchedCode, usage.snippet),
-          fixPrBody(explanation, change.entry)
+          fixPrTitle(scope.targets.join(", "), patchedCode, usage.snippet),
+          fixPrBody(explanation, scope.entry)
         );
 
         console.log(`Opened PR: ${prUrl}`);
@@ -182,9 +217,10 @@ export async function processReleases(
   opts: PipelineOptions
 ): Promise<{ changes: ChangeLogEntry[]; markedSeen: boolean }> {
   const changes: ChangeLogEntry[] = [];
-  for (const change of releases.changes) {
+  const scopes = fixScopes(releases.changes);
+  for (const [i, change] of releases.changes.entries()) {
     console.log(`\n[${change.version}] ${change.entry}`);
-    changes.push(await processChange(change, deps, opts));
+    changes.push(await processChange(change, deps, opts, scopes[i]));
   }
 
   // Unreadable notes count as a failure: their breaking changes may not be in `changes` at all.

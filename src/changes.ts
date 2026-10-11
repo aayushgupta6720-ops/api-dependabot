@@ -8,6 +8,12 @@ export interface DetectedChange {
   // Exactly one of these says what to scan for:
   methodName?: string; // a method callers call, e.g. "charges.create"
   fieldPath?: string; // a field callers read off a returned object, e.g. "payment_method_details.blik.expires_after"; "[]" marks array elements
+  resource?: string; // for a field: the client resource whose objects carry it, e.g. "customers", "issuing.cards"
+  // The changelog item that states the change (its list entry, with any
+  // sub-items), as the notes have it. Fix branches are keyed on it: the notes
+  // say the same thing every run, while the model may word or name a change
+  // differently from one run to the next.
+  source?: string;
 }
 
 /** The method or field a change is about, for logs, branch names and PR titles. */

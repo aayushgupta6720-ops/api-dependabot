@@ -1,6 +1,6 @@
 import { changeTarget, REVIEW_MARKER, type DetectedChange } from "./changes.js";
 import { config } from "./config.js";
-import { splitNotes } from "./releaseNotes.js";
+import { numberNotes, splitNotes, type NotesItem } from "./releaseNotes.js";
 
 export type { DetectedChange } from "./changes.js";
 
@@ -131,11 +131,76 @@ export async function extractBreakingChanges(
 }
 
 async function extractFromBatch(packageName: string, batch: Piece[]): Promise<Extraction> {
-  const releasesText = batch.map((p) => `${p.heading}\n${p.text}`).join("\n\n");
+  const { numbered, items } = numberNotes(batch.map((p) => p.text));
+  // Line number -> the release and the item of its notes that the line is in.
+  const lineAt = new Map<number, { version: string; item: NotesItem }>();
+  batch.forEach((p, i) => {
+    for (const item of items[i]) {
+      for (let n = item.first; n <= item.last; n++) lineAt.set(n, { version: p.version, item });
+    }
+  });
 
+  const result: Extraction = { changes: [], notPatched: [], problems: [] };
+  const cited = new Set<NotesItem>(); // the items some change or notPatched entry came from
+  await askAbout(packageName, batch, batch.map((p, i) => `${p.heading}\n${numbered[i]}`).join("\n\n"), null, lineAt, cited, result);
+
+  // Every item the notes mark as breaking must get something back: a change or
+  // a reason there's nothing to patch. A cited line anywhere under an item
+  // answers it, since the model may cite the nested entry that names the
+  // method rather than the entry that carries the ⚠️.
+  const unanswered = () =>
+    batch.map((_, i) => {
+      const citedLines = [...cited].filter((c) => items[i].includes(c)).map((c) => c.first);
+      return items[i].filter((item) => item.marked && !citedLines.some((n) => n >= item.first && n <= item.end));
+    });
+  // The model reads a long piece and passes over an item now and then (on
+  // v23.0.0, one type change out of 26 marked items). Ask once more about just
+  // those items before calling them missed.
+  let gaps = unanswered();
+  if (gaps.some((g) => g.length > 0)) {
+    const lines = (item: NotesItem) => item.text.split("\n").map((l, k) => `[${item.first + k}] ${l}`).join("\n");
+    const text = batch
+      .map((p, i) => (gaps[i].length ? `${p.heading}\n${gaps[i].map(lines).join("\n")}` : ""))
+      .filter(Boolean)
+      .join("\n\n");
+    await askAbout(packageName, batch, text, new Set(gaps.flat()), lineAt, cited, result);
+    gaps = unanswered();
+  }
+
+  // Notes that mark breaking changes some other way (a "Breaking changes"
+  // heading over prose, say) must at least get an answer for their release.
+  const answered = new Set([...result.changes, ...result.notPatched].map((c) => c.version));
+  batch.forEach((piece, i) => {
+    const label = piece.heading.replace(/^### /, "");
+    for (const item of gaps[i]) {
+      result.problems.push(`${label}: "${item.text.split("\n")[0].trim().slice(0, 120)}" is marked breaking, but the model reported nothing for it`);
+    }
+    if (!items[i].some((item) => item.marked) && BREAKING_MARKER_RE.test(piece.text) && !answered.has(piece.version)) {
+      result.problems.push(`${label}: the notes mark breaking changes, but the model reported none`);
+    }
+  });
+  return result;
+}
+
+/** One request: `releasesText` in (numbered notes, or for a follow-up just the
+ * marked items in `followUp` that went unanswered), its changes and reasons
+ * added to `result`, and the items they cite to `cited`. A follow-up's answers
+ * count only for the items it asked about, so nothing is reported twice. */
+async function askAbout(
+  packageName: string,
+  batch: Piece[],
+  releasesText: string,
+  followUp: Set<NotesItem> | null,
+  lineAt: Map<number, { version: string; item: NotesItem }>,
+  cited: Set<NotesItem>,
+  result: Extraction
+): Promise<void> {
+  const what = followUp
+    ? "ITEMS FROM THE RELEASE NOTES that are marked breaking and haven't been classified yet; each one must go in \"changes\" or \"notPatched\". Each line starts with its number in brackets, which isn't part of the notes"
+    : "RELEASES (oldest to newest; a long release comes in parts, and this may be one part of it). Each line of the notes starts with its number in brackets, which isn't part of the notes";
   const prompt = `You are scanning release notes for breaking API changes in the "${packageName}" SDK.
 
-RELEASES (oldest to newest; a long release comes in parts, and this may be one part of it):
+${what}:
 ${releasesText}
 
 Identify only changes that would break existing caller code:
@@ -149,10 +214,10 @@ Every item the notes mark as breaking (with ⚠️, "BREAKING CHANGE" or under a
 
 Return ONLY a JSON object, no markdown fences, no extra text:
 {"changes": [...], "notPatched": [...]}
-Each element of "changes" is one of these two shapes, with "version" the release tag as written in its heading, without any "(part ...)":
-{"version": "the release tag, e.g. v10.0.0", "entry": "one-line summary, e.g. 'v10.0.0: Renamed \`listUpcomingLineItems\` method on the \`Invoice\` resource to \`listUpcomingLines\`.'", "kind": "method", "methodName": "the dotted call path callers would use, e.g. invoices.listUpcomingLineItems"}
-{"version": "the release tag", "entry": "one-line summary, e.g. 'v22.7.0-alpha.4: \`Mandate.payment_method_details.blik.expires_after\` removed.'", "kind": "field", "fieldPath": "the path callers read off the returned object, without the resource name, e.g. payment_method_details.blik.expires_after; write array elements as [], e.g. classifications[].credit for \`FinancialConnections.Transaction.classifications[]\` credit"}
-Each element of "notPatched" is {"version": "the release tag", "entry": "one-line summary, then why there's nothing to patch"}.
+Each element of "changes" is one of these two shapes, with "version" the release tag as written in its heading, without any "(part ...)", and "line" the number of the line in the notes that states the change:
+{"version": "the release tag, e.g. v10.0.0", "line": 12, "entry": "one-line summary, e.g. 'v10.0.0: Renamed \`listUpcomingLineItems\` method on the \`Invoice\` resource to \`listUpcomingLines\`.'", "kind": "method", "methodName": "the dotted call path callers would use, e.g. invoices.listUpcomingLineItems"}
+{"version": "the release tag", "line": 12, "entry": "one-line summary, e.g. 'v22.7.0-alpha.4: \`Mandate.payment_method_details.blik.expires_after\` removed.'", "kind": "field", "fieldPath": "the path callers read off the returned object, without the resource name, e.g. payment_method_details.blik.expires_after; write array elements as [], e.g. classifications[].credit for \`FinancialConnections.Transaction.classifications[]\` credit", "resource": "the dotted client path whose methods return that object, e.g. mandates for Mandate, issuing.cards for Issuing.Card, financialConnections.transactions for FinancialConnections.Transaction; empty if the notes don't name one object"}
+Each element of "notPatched" is {"version": "the release tag", "line": the number of the line that states it, "entry": "one-line summary, then why there's nothing to patch"}.
 If these notes have no breaking changes, return {"changes": [], "notPatched": []}.`;
 
   // temperature 0: a retry should name a change the same way, or it gets a new
@@ -175,38 +240,48 @@ If these notes have no breaking changes, return {"changes": [], "notPatched": []
   const tags = new Map(batch.map((p) => [p.version.replace(/^v/i, "").toLowerCase(), p.version]));
   const asTag = (v: string | undefined) => (v ? (tags.get(v.replace(/^v/i, "").toLowerCase()) ?? v) : v);
 
-  const problems: string[] = [];
-  const notPatched = reply.notPatched.flatMap((item) => {
+  // The item of `version`'s notes that the model's line number points into, if it does.
+  const sourceOf = (line: unknown, version: string) => {
+    const at = typeof line === "number" ? lineAt.get(line) : undefined;
+    if (!at || at.version !== version) return undefined;
+    cited.add(at.item);
+    return at.item;
+  };
+  const askedAbout = (item: Record<string, unknown>) => {
+    const at = typeof item.line === "number" ? lineAt.get(item.line) : undefined;
+    return !followUp || (at !== undefined && followUp.has(at.item));
+  };
+  for (const item of reply.notPatched) {
     const c = (item ?? {}) as Record<string, unknown>;
+    if (!askedAbout(c)) continue;
     const version = asTag(releaseTag(c.version));
     const entry = typeof c.entry === "string" ? c.entry.trim() : "";
-    return version && entry ? [{ version, entry }] : [];
-  });
-  const changes = reply.changes.flatMap((item) => {
+    if (version) sourceOf(c.line, version);
+    if (version && entry) result.notPatched.push({ version, entry });
+  }
+  for (const item of reply.changes) {
+    if (followUp && !askedAbout((item ?? {}) as Record<string, unknown>)) continue;
     const described = toDetectedChange(item);
     const change = described && { ...described, version: asTag(described.version)! };
     if (!change) {
-      problems.push(`the model described a breaking change unusably: ${JSON.stringify(item).slice(0, 300)}`);
-      return [];
+      result.problems.push(`the model described a breaking change unusably: ${JSON.stringify(item).slice(0, 300)}`);
+      continue;
     }
+    // Without its line, a change has nothing stable to key its fix branch on.
+    const source = sourceOf((item as Record<string, unknown>).line, change.version);
+    if (!source) {
+      result.problems.push(`the model didn't give the line of ${change.version}'s notes that states: ${change.entry.slice(0, 200)}`);
+      continue;
+    }
+    change.source = source.text;
     // A path of only "*" and "[]" would match every property read in every
     // file that imports the package.
     if (change.fieldPath && !change.fieldPath.split(".").some((s) => s !== "*" && s.replace(/\[\]/g, ""))) {
-      notPatched.push({ version: change.version, entry: `${change.entry} (names no field to scan for)` });
-      return [];
+      result.notPatched.push({ version: change.version, entry: `${change.entry} (names no field to scan for)` });
+      continue;
     }
-    return [change];
-  });
-
-  // A release whose notes here mark breaking changes must get something back
-  // for them: an empty answer for it is a misread, not a release with nothing in it.
-  const answered = new Set([...changes, ...notPatched].map((c) => c.version));
-  for (const piece of batch) {
-    if (BREAKING_MARKER_RE.test(piece.text) && !answered.has(piece.version)) {
-      problems.push(`${piece.heading.replace(/^### /, "")}: the notes mark breaking changes, but the model reported none`);
-    }
+    result.changes.push(change);
   }
-  return { changes, notPatched, problems };
 }
 
 /** A release tag as the model gave it, minus a "(part 2 of 8)" it copied from the heading. */
@@ -216,17 +291,20 @@ function releaseTag(v: unknown): string | undefined {
 
 /** Entries for the same method or field in the same release (two parameters
  * of one method removed, say) become one, so the file gets a single patch
- * that handles both. Kept apart, they'd share a fix branch, and the second
- * would be skipped as already having the first one's PR. */
+ * that handles both, rather than two PRs that each fix half and conflict. */
 function mergeSameTarget(changes: DetectedChange[]): DetectedChange[] {
-  const merged = new Map<string, DetectedChange>();
+  const merged = new Map<string, { change: DetectedChange; sources: Set<string> }>();
   for (const change of changes) {
-    const key = JSON.stringify([change.version, change.fieldPath ? "field" : "method", changeTarget(change)]);
+    const key = JSON.stringify([change.version, change.fieldPath ? "field" : "method", changeTarget(change), change.resource ?? ""]);
     const earlier = merged.get(key);
-    if (earlier) earlier.entry = `${earlier.entry}\n${change.entry}`;
-    else merged.set(key, { ...change });
+    if (earlier) earlier.change.entry = `${earlier.change.entry}\n${change.entry}`;
+    else merged.set(key, { change: { ...change }, sources: new Set() });
+    if (change.source) merged.get(key)!.sources.add(change.source);
   }
-  return [...merged.values()];
+  // A change stated in two items is keyed on both, in a fixed order.
+  return [...merged.values()].map(({ change, sources }) =>
+    sources.size ? { ...change, source: [...sources].sort().join("\n\n") } : change
+  );
 }
 
 /** One of the model's entries as a DetectedChange, or null if it doesn't say
@@ -238,8 +316,10 @@ function toDetectedChange(item: unknown): DetectedChange | null {
   const entry = text(c.entry);
   const fieldPath = c.kind === "field" ? text(c.fieldPath) : undefined;
   const methodName = fieldPath ? undefined : text(c.methodName);
+  const resource = fieldPath ? text(c.resource) : undefined;
   if (!version || !entry || (!fieldPath && !methodName)) return null;
-  return fieldPath ? { version, entry, fieldPath } : { version, entry, methodName };
+  if (!fieldPath) return { version, entry, methodName };
+  return resource ? { version, entry, fieldPath, resource } : { version, entry, fieldPath };
 }
 
 /**

@@ -99,6 +99,33 @@ test("a one-segment field is only looked for in files that use the package", () 
   assert.deepEqual(lines(findFieldUsages(dir, "stripe", "livemode")), { "uses-sdk.js": [3] });
 });
 
+test("given the resource, reads off another resource's objects are skipped", () => {
+  const dir = repo({
+    "balance.js": `import Stripe from "stripe";
+const stripe = new Stripe(k);
+const balance = await stripe.balance.retrieve();
+const amounts = balance.available.map((b) => b.currency);
+const { currency } = await stripe.balance.retrieve();
+`,
+    "customers.js": `import Stripe from "stripe";
+const stripe = new Stripe(k);
+const customer = await stripe.customers.retrieve(id);
+use(customer.currency);
+const { data } = await stripe.customers.list();
+for (const c of data) use(c.currency);
+const invoice = await stripe.invoices.retrieve(id, { expand: ["customer"] });
+use(invoice.customer.currency, invoice.currency);
+export function show(someCustomer) { return someCustomer.currency; }
+`,
+  });
+  // Customer's currency: not a balance's, nor an invoice's own; an expanded customer's is, and so is
+  // a parameter's, since the code doesn't say where it came from.
+  assert.deepEqual(lines(findFieldUsages(dir, "stripe", "currency", "customers")), { "customers.js": [4, 6, 8, 9] });
+  assert.deepEqual(lines(findFieldUsages(dir, "stripe", "currency", "balance")), { "balance.js": [4, 5], "customers.js": [9] });
+  // Without a resource, every read counts, as before.
+  assert.deepEqual(lines(findFieldUsages(dir, "stripe", "currency")), { "balance.js": [4, 5], "customers.js": [4, 6, 8, 9] });
+});
+
 test("a field path with no name in it matches nothing, rather than every read", () => {
   const dir = repo({ "uses-sdk.js": `import Stripe from "stripe";\nconst list = await stripe.v2.core.accounts.list();\nif (list.has_more) next(list.url);\n` });
   for (const path of ["*", "[]", "*.*", "*[]"]) assert.deepEqual(findFieldUsages(dir, "stripe", path), [], path);

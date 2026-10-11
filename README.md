@@ -66,8 +66,14 @@ counts when its path lines up with the end of the field's path over at least
 two names, so `details.blik.expires_after` matches but a bare
 `x.expires_after` doesn't. A one-name field (`livemode`) is only looked for
 in files that import the package, and `*` stands for any one property when
-a field changed under many parents (`country_options.*.igic`). A false
-match costs a model call that finds nothing to change. The scanner reads
+a field changed under many parents (`country_options.*.igic`). Extraction
+also names the resource whose objects carry a field (`customers` for
+`Customer`), and a read whose object the code shows came from another
+resource is skipped: Customer's `currency` becoming nullable says nothing
+about `balance.available.map((b) => b.currency)`. Reads it can't trace (a
+parameter, a `.then` callback) still count, and so does a field read through
+an expanded object (`invoice.customer.currency`). Before this, the end-to-end
+eval below once got a PR "fixing" that balance read. The scanner reads
 `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs` and `.cjs` files, and skips
 `node_modules`, `.d.ts` files and `dist`/`build` output. A test checks that
 it finds the code of every eval fixture.
@@ -102,14 +108,20 @@ be read, the run log and dashboard say so and the release stays unseen, so
 its breaking changes aren't silently missed.
 
 Long notes are read in pieces of about 12,000 characters, split between
-list items, and small releases share a request. Every item the notes mark
-as breaking (⚠️, "BREAKING CHANGE" or a "Breaking changes" heading) has to
-come back either as a change to patch or as one with nothing to patch, with
-the reason: a removed export, a dropped Node version, a field that became
-required. The dashboard lists those too. The releases stay unseen, and the
-next run reads them again, if the reply isn't in the expected shape, if a
-change can't be scanned for, or if a piece marks breaking changes and gets
-nothing back.
+list items, and small releases share a request. Each line goes to the model
+numbered, and every change it reports has to say which line states it.
+Every list entry the notes mark as breaking (⚠️ or "BREAKING CHANGE" on the
+entry, or a top-level entry under a "⚠️ Removed" or "Breaking changes"
+heading) has to come back either as a change to patch or as one with nothing
+to patch, with the reason: a removed export, a dropped Node version, a field
+that became required. The dashboard lists those too. Nested entries count
+on their own: v23.0.0 has one top-level entry whose ⚠️ sub-entries fill
+three pieces. An entry the model passes over gets one more request, about
+just the entries still unanswered; in a dry run on v23.0.0 the first pass
+skipped one of them. The releases stay unseen, and the next run reads them
+again, if the reply isn't in the expected shape, if a change can't be
+scanned for or names no line of its release, or if a marked entry is still
+unanswered after that.
 
 This replaced a cut at 40,000 characters. stripe-node's v23.0.0 section is
 45,500 characters with 26 items marked breaking; cut and sent in one prompt
@@ -119,10 +131,14 @@ to scan for and 22 breaking items with nothing to patch.
 
 The marker only moves once every change from those releases has been
 handled. If a patch or PR fails, the releases stay unseen and the next run
-retries them. Each fix goes on a branch named after its change and file
-(`api-dependabot/<version>-<method>-<file>`), so a retry finds the PR an
-earlier run opened and skips that file, without a model call. A PR that was
-closed counts too, so a fix someone rejected isn't reopened.
+retries them. Each fix goes on a branch keyed on its release, the entry of
+the notes that states it and the file
+(`api-dependabot/<version>-<hash of the entry>-<file>`), so a retry finds the
+PR an earlier run opened and skips that file, without a model call, even if
+the model named or worded the change differently this time. A PR that was
+closed counts too, so a fix someone rejected isn't reopened. Changes stated
+in the same entry ("Remove `foo` and `bar`") share that branch: the first
+to reach a file gets one patch for all of them, and the rest find its PR.
 
 ## Model and free-tier quota
 
@@ -134,7 +150,8 @@ requests/day each, and a single `npm run eval` uses 10.
 `npm run dev` makes no Gemini calls when there are no new releases.
 Otherwise it makes one call per 12,000 characters of new release notes to
 extract breaking changes (stripe-node's four releases after v22.7.0-alpha.5
-took 9), plus one per affected file for each breaking change.
+took 9), one more for a batch with marked entries the model passed over,
+plus one per affected file for each breaking change.
 The key goes in an `x-goog-api-key` header rather than the URL, where
 proxies and request logs would record it.
 
@@ -154,7 +171,28 @@ pre-PR check above and matches each fixture's `mustContain`/`mustNotContain`
 substrings or patterns, and writes full
 results (explanations + patched code, not just pass/fail) to
 `eval-results/`. `npm run eval -- blik` runs only the cases whose id
-contains "blik".
+contains "blik", and `--samples 3` runs each case three times, since one
+patch says little about a model whose output varies; the weekly run uses 3.
+
+Each patch is also type-checked against the SDK release its change shipped
+in: `npm run eval:sdks` downloads those versions of `stripe` (with their
+own type declarations) into `.cache/sdk/`, and a case fails if the patched
+file has type errors the original didn't, such as a method the model
+invented or a parameter it misnamed. The original's own errors (often the
+breaking change itself) don't count against it. stripe 6.21.0 ships no
+types, so that one case is only parsed.
+
+```bash
+npm run eval:e2e
+```
+
+The end-to-end eval runs a real release through everything but GitHub:
+stripe-node's 10.0.0 changelog (22 entries marked breaking) goes through
+extraction, a three-file repo (`src/eval/e2e/repo/`) through the scanner,
+then the patches, the pre-PR check and the type check against stripe
+10.0.0. It passes when every marked entry is accounted for, the two renamed
+or removed methods the repo calls are found, exactly the two affected files
+get PRs, and both patches are right. It takes about five model calls.
 
 The bundled fixtures are 13 real breaking changes pulled straight from
 [stripe-node's own CHANGELOG](https://github.com/stripe/stripe-node/blob/master/CHANGELOG.md)
@@ -272,9 +310,11 @@ npm test
 
 Runs offline with Node's built-in test runner (no API keys or network): the
 retry logic in `src/pipeline.ts` (what gets marked seen, what a retry
-skips), how release notes are split and read, the scanner's client
-resolution, the pre-PR patch check, the dashboard's escaping and error
-handling, its static copy, and how the Gemini key is sent.
+skips, branches keyed on the notes' entries), how release notes are split,
+numbered and read (including the follow-up for unanswered entries), the
+scanner's client and resource resolution, the pre-PR patch check, the
+eval's type check (against a small fake SDK), the dashboard's escaping and
+error handling, its static copy, and how the Gemini key is sent.
 
 ## What's stubbed vs. real
 
@@ -285,7 +325,7 @@ handling, its static copy, and how the Gemini key is sent.
 | LLM patch generation (Gemini) | Working |
 | GitHub PR creation | Working |
 | Changelog watcher | Working — polls GitHub Releases, extracts breaking changes via Gemini |
-| Eval harness | Working — replays fixtures through the patch generator, grades pass/fail |
+| Eval harness | Working — replays fixtures through the patch generator, type-checks each patch against its SDK release, samples each case; plus an end-to-end eval of one real release |
 | Run logging | Working — every run appends structured results to `run-log.jsonl` |
 | Dashboard | Working — read-only view of runs, evals, and watcher health; published to GitHub Pages after each scheduled run |
 

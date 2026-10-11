@@ -41,30 +41,57 @@ function modelSays(reply: unknown | ((prompt: string) => unknown)) {
 test("the model's changes become method or field changes; unusable ones are reported, not dropped quietly", async () => {
   modelSays({
     changes: [
-      { version: "v1", entry: "v1: `charges.create` removed.", kind: "method", methodName: "charges.create" },
-      { version: "v1 (part 2 of 3)", entry: "v1: `Mandate.x.y` removed.", kind: "field", fieldPath: "x.y", methodName: "mandates.retrieve" },
-      { version: "v1", entry: "no target" },
-      { version: "v1", entry: "field without a path", kind: "field" },
+      { version: "v1", line: 1, entry: "v1: `charges.create` removed.", kind: "method", methodName: "charges.create" },
+      { version: "v1 (part 2 of 3)", line: 2, entry: "v1: `Mandate.x.y` removed.", kind: "field", fieldPath: "x.y", methodName: "mandates.retrieve", resource: "mandates" },
+      { version: "v1", line: 1, entry: "no target" },
+      { version: "v1", line: 1, entry: "field without a path", kind: "field" },
       "not an object",
     ],
-    notPatched: [{ version: "v1", entry: "v1: Node 18 dropped; no call to patch." }, { entry: "no version" }],
+    notPatched: [{ version: "v1", line: 1, entry: "v1: Node 18 dropped; no call to patch." }, { entry: "no version" }],
   });
 
   const { extractBreakingChanges } = await import("./llmClient.js");
-  const result = await extractBreakingChanges("stripe", [{ version: "v1", notes: "* ⚠️ several things" }]);
+  const result = await extractBreakingChanges("stripe", [{ version: "v1", notes: "* ⚠️ several things\n  - and a sub-item" }]);
 
+  // Each change keeps the entry of the notes it came from.
   assert.deepEqual(result.changes, [
-    { version: "v1", entry: "v1: `charges.create` removed.", methodName: "charges.create" },
-    { version: "v1", entry: "v1: `Mandate.x.y` removed.", fieldPath: "x.y" },
+    { version: "v1", entry: "v1: `charges.create` removed.", methodName: "charges.create", source: "* ⚠️ several things" },
+    { version: "v1", entry: "v1: `Mandate.x.y` removed.", fieldPath: "x.y", resource: "mandates", source: "  - and a sub-item" },
   ]);
   assert.deepEqual(result.notPatched, [{ version: "v1", entry: "v1: Node 18 dropped; no call to patch." }]);
   assert.equal(result.problems.length, 3);
   assert.ok(result.problems.every((p) => p.startsWith("the model described a breaking change unusably")));
 });
 
+test("the notes go to the model with numbered lines, and a change must name a line of its own release", async () => {
+  const bodies = modelSays({
+    changes: [
+      { version: "v1", line: 2, entry: "v1: `a` removed.", kind: "method", methodName: "a" },
+      { version: "v1", line: 4, entry: "v1: `b` removed.", kind: "method", methodName: "b" }, // line 4 is v2's
+      { version: "v1", entry: "v1: `c` removed.", kind: "method", methodName: "c" }, // no line
+      { version: "v1", line: "2", entry: "v1: `d` removed.", kind: "method", methodName: "d" }, // not a number
+    ],
+    notPatched: [{ version: "v2", line: 4, entry: "v2: a helper; nothing to call." }],
+  });
+  const { extractBreakingChanges } = await import("./llmClient.js");
+  const result = await extractBreakingChanges("stripe", [
+    { version: "v1", notes: "## 1.0.0\n* ⚠️ Remove `a`" },
+    { version: "v2", notes: "## 2.0.0\n* ⚠️ Remove `helper`" },
+  ]);
+
+  const prompt = bodies[0].contents[0].parts[0].text;
+  assert.ok(prompt.includes("### v1\n[1] ## 1.0.0\n[2] * ⚠️ Remove `a`\n\n### v2\n[3] ## 2.0.0\n[4] * ⚠️ Remove `helper`"), prompt);
+  assert.deepEqual(result.changes.map((c) => [c.methodName, c.source]), [["a", "* ⚠️ Remove `a`"]]);
+  assert.deepEqual(result.problems, [
+    "the model didn't give the line of v1's notes that states: v1: `b` removed.",
+    "the model didn't give the line of v1's notes that states: v1: `c` removed.",
+    "the model didn't give the line of v1's notes that states: v1: `d` removed.",
+  ]);
+});
+
 test("a field path with no name in it is listed as nothing to patch, not scanned for", async () => {
   modelSays({
-    changes: [{ version: "v1", entry: "v1: `object`, `has_more` and `url` removed from `V2List`.", kind: "field", fieldPath: "*" }],
+    changes: [{ version: "v1", line: 1, entry: "v1: `object`, `has_more` and `url` removed from `V2List`.", kind: "field", fieldPath: "*" }],
     notPatched: [],
   });
   const { extractBreakingChanges } = await import("./llmClient.js");
@@ -76,20 +103,25 @@ test("a field path with no name in it is listed as nothing to patch, not scanned
   assert.deepEqual(result.problems, []);
 });
 
-test("two entries for the same method in one release become one change", async () => {
+test("two entries for the same method in one release become one change, keyed on both their items", async () => {
   modelSays({
     changes: [
-      { version: "v1", entry: "v1: `crypto_properties` removed from `financialAddresses.create`.", kind: "method", methodName: "financialAddresses.create" },
-      { version: "v1", entry: "v1: `type` values removed from `financialAddresses.create`.", kind: "method", methodName: "financialAddresses.create" },
-      { version: "v2", entry: "v2: `financialAddresses.create` removed.", kind: "method", methodName: "financialAddresses.create" },
+      { version: "v1", line: 2, entry: "v1: `type` values removed from `financialAddresses.create`.", kind: "method", methodName: "financialAddresses.create" },
+      { version: "v1", line: 1, entry: "v1: `crypto_properties` removed from `financialAddresses.create`.", kind: "method", methodName: "financialAddresses.create" },
+      { version: "v2", line: 3, entry: "v2: `financialAddresses.create` removed.", kind: "method", methodName: "financialAddresses.create" },
     ],
     notPatched: [],
   });
 
   const { extractBreakingChanges } = await import("./llmClient.js");
-  const { changes } = await extractBreakingChanges("stripe", [{ version: "v1", notes: "..." }]);
+  const { changes, problems } = await extractBreakingChanges("stripe", [
+    { version: "v1", notes: "* Remove `crypto_properties`\n* Remove `type` values" },
+    { version: "v2", notes: "* Remove `create`" },
+  ]);
 
+  assert.deepEqual(problems, []);
   assert.deepEqual(changes.map((c) => [c.version, c.entry.split("\n").length]), [["v1", 2], ["v2", 1]]);
+  assert.equal(changes[0].source, "* Remove `crypto_properties`\n\n* Remove `type` values"); // sorted, whatever the reply's order
 });
 
 test("a reply that isn't the expected object fails the run instead of meaning no changes", async () => {
@@ -108,33 +140,92 @@ test("notes that mark breaking changes can't come back empty", async () => {
     { version: "v2.0.0", notes: "* ⚠️ Remove `Stripe.constructEventWithoutVerification`" },
     { version: "v2.0.1", notes: "* Add `foo` to `Charge`" },
     { version: "v3.0.0", notes: "### Breaking changes\n* `bar` now takes an object" },
+    { version: "v4.0.0", notes: "## Breaking changes\nThe client now needs Node 20." },
   ]);
   assert.deepEqual(flagged.problems, [
-    "v2.0.0: the notes mark breaking changes, but the model reported none",
-    "v3.0.0: the notes mark breaking changes, but the model reported none",
+    'v2.0.0: "* ⚠️ Remove `Stripe.constructEventWithoutVerification`" is marked breaking, but the model reported nothing for it',
+    'v3.0.0: "* `bar` now takes an object" is marked breaking, but the model reported nothing for it',
+    "v4.0.0: the notes mark breaking changes, but the model reported none",
   ]);
 
   // A release named as its changelog heading names it, without the "v", is the same release.
-  modelSays({ changes: [], notPatched: [{ version: "23.1.0-beta.1", entry: "a field became required" }] });
+  modelSays({ changes: [], notPatched: [{ version: "23.1.0-beta.1", line: 1, entry: "a field became required" }] });
   const unprefixed = await extractBreakingChanges("stripe", [{ version: "v23.1.0-beta.1", notes: "* ⚠️ Change `x` to be required" }]);
   assert.deepEqual(unprefixed.problems, []);
   assert.deepEqual(unprefixed.notPatched, [{ version: "v23.1.0-beta.1", entry: "a field became required" }]);
 
   // Saying why there's nothing to patch is an answer.
-  modelSays({ changes: [], notPatched: [{ version: "v2.0.0", entry: "a static helper, not a client method" }] });
+  modelSays({ changes: [], notPatched: [{ version: "v2.0.0", line: 1, entry: "a static helper, not a client method" }] });
   const explained = await extractBreakingChanges("stripe", [{ version: "v2.0.0", notes: "* ⚠️ Remove `x`" }]);
   assert.deepEqual(explained.problems, []);
+});
+
+test("every item marked breaking needs an answer, not just one per release", async () => {
+  const { extractBreakingChanges } = await import("./llmClient.js");
+  modelSays({
+    changes: [
+      { version: "v2.0.0", line: 4, entry: "v2.0.0: `b` removed.", kind: "method", methodName: "b" },
+      { version: "v2.0.0", line: 7, entry: "v2.0.0: `x` removed.", kind: "method", methodName: "x" },
+    ],
+    notPatched: [],
+  });
+  const result = await extractBreakingChanges("stripe", [{
+    version: "v2.0.0",
+    notes: [
+      "* ⚠️ Remove `a`", // 1: nothing answers it
+      "* Add `z`",
+      "* ⚠️ Remove the following:", // 3: answered by the entry nested under it
+      "  * `b`",
+      "  * `c`",
+      "* Changes to the API", // 6: stripe-node's v23 marks the nested entries instead
+      "  * ⚠️ Remove `x`",
+      "  * ⚠️ Remove `y`", // 8: nothing answers it
+      "  * Add `w`",
+    ].join("\n"),
+  }]);
+  assert.deepEqual(result.problems, [
+    'v2.0.0: "* ⚠️ Remove `a`" is marked breaking, but the model reported nothing for it',
+    'v2.0.0: "* ⚠️ Remove `y`" is marked breaking, but the model reported nothing for it',
+  ]);
+  assert.deepEqual(result.changes.map((c) => c.source), ["  * `b`", "  * ⚠️ Remove `x`"]);
+});
+
+test("items the model passed over get one more request, about just them", async () => {
+  const { extractBreakingChanges } = await import("./llmClient.js");
+  const bodies = modelSays((prompt: string) =>
+    prompt.includes("haven't been classified yet")
+      ? {
+          changes: [{ version: "v2.0.0", line: 1, entry: "again", kind: "method", methodName: "a" }], // already answered: ignored
+          notPatched: [{ version: "v2.0.0", line: 3, entry: "v2.0.0: an enum narrowed; nothing to patch." }],
+        }
+      : { changes: [{ version: "v2.0.0", line: 1, entry: "v2.0.0: `a` removed.", kind: "method", methodName: "a" }], notPatched: [] }
+  );
+  const result = await extractBreakingChanges("stripe", [
+    { version: "v2.0.0", notes: "* ⚠️ Remove `a`\n* Add `z`\n* ⚠️ Change `b` to an enum" },
+  ]);
+  assert.equal(bodies.length, 2);
+  const followUp = bodies[1].contents[0].parts[0].text;
+  assert.ok(followUp.includes("### v2.0.0\n[3] * ⚠️ Change `b` to an enum\n") && !followUp.includes("Remove `a`"), followUp);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.changes.map((c) => c.entry), ["v2.0.0: `a` removed."]);
+  assert.deepEqual(result.notPatched, [{ version: "v2.0.0", entry: "v2.0.0: an enum narrowed; nothing to patch." }]);
+
+  // Still unanswered after that: a problem, and no third request.
+  const again = modelSays({ changes: [], notPatched: [] });
+  const missed = await extractBreakingChanges("stripe", [{ version: "v2.0.0", notes: "* ⚠️ Remove `a`" }]);
+  assert.equal(again.length, 2);
+  assert.deepEqual(missed.problems, ['v2.0.0: "* ⚠️ Remove `a`" is marked breaking, but the model reported nothing for it']);
 });
 
 test("long notes are read in pieces, every piece checked, and small releases share a request", async () => {
   const { extractBreakingChanges, MAX_PROMPT_NOTES_CHARS } = await import("./llmClient.js");
   const item = (n: number) => `* ⚠️ Remove \`method${n}\` from \`Thing\`\n  - ${"detail ".repeat(60)}`;
   const big = Array.from({ length: 80 }, (_, n) => item(n)).join("\n"); // ~35,000 characters
-  // The model finds the change in every piece but the second.
+  // The model answers every marked item in every piece but the second.
   const bodies = modelSays((prompt: string) => ({
-    changes: prompt.includes("(part 2 of") ? [] : [
-      { version: "v23.0.0", entry: "a change", kind: "method", methodName: `things.m${prompt.length}` },
-    ],
+    changes: prompt.includes("(part 2 of") ? [] : [...prompt.matchAll(/^\[(\d+)\] \* ⚠️ Remove `(\w+)`/gm)].map((m) => (
+      { version: "v23.0.0", line: Number(m[1]), entry: "a change", kind: "method", methodName: `things.${m[2]}` }
+    )),
     notPatched: [],
   }));
 
@@ -149,8 +240,12 @@ test("long notes are read in pieces, every piece checked, and small releases sha
   assert.ok(prompts[0].includes("### v22.9.0") && prompts[0].includes("### v22.9.1"));
   for (let n = 0; n < 80; n++) assert.ok(prompts.some((p) => p.includes(`\`method${n}\``)), `method${n} was never sent`);
   assert.ok(prompts.every((p) => p.length < MAX_PROMPT_NOTES_CHARS + 6_000), "a prompt over the piece size");
-  assert.equal(result.problems.length, 1);
-  assert.match(result.problems[0], /^v23\.0\.0 \(part 2 of [3-5]\): the notes mark breaking changes, but the model reported none$/);
+  const part2 = prompts.find((p) => p.includes("(part 2 of"))!;
+  assert.equal(result.problems.length, [...part2.matchAll(/^\[\d+\] \* ⚠️/gm)].length);
+  for (const problem of result.problems) {
+    assert.match(problem, /^v23\.0\.0 \(part 2 of [3-5]\): "\* ⚠️ Remove `method\d+` from `Thing`" is marked breaking/);
+  }
+  assert.equal(result.changes.length, 80 - result.problems.length);
   assert.ok(bodies.every((b) => b.generationConfig?.temperature === 0));
 });
 

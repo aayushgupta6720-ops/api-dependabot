@@ -143,3 +143,69 @@ export function splitNotes(notes: string, max: number): string[] {
   if (current) pieces.push(current);
   return pieces;
 }
+
+/** An item of release notes: a list entry (at any depth) or a heading, with
+ * the lines that continue it, and the numbers numberNotes gave its first and
+ * last lines. `end` is the last line of the entries nested under it. */
+export interface NotesItem {
+  text: string;
+  first: number;
+  last: number;
+  end: number;
+  marked: boolean; // the notes mark it as breaking
+}
+
+/**
+ * Pieces of release notes with every line numbered ("[12] * Remove `x`"), so
+ * the model can say which line states each change, and the items those lines
+ * belong to, per piece. Numbers run on across pieces, so each names one line.
+ *
+ * Every list entry is an item, nested ones too: stripe-node's v23.0.0 has one
+ * top-level entry ("Changes to the API") whose sub-entries, many marked ⚠️,
+ * fill three pieces. An entry is marked breaking if its own text carries ⚠️ or
+ * "BREAKING CHANGE", or it's a top-level entry under a heading that does or
+ * that starts "Breaking" ("### ⚠️ Removed", "## Breaking changes"). Headings
+ * and prose never are: stripe-node's notes open with
+ * '"⚠️" symbol highlights breaking changes.'
+ */
+export function numberNotes(pieces: string[]): { numbered: string[]; items: NotesItem[][] } {
+  let n = 0;
+  const numbered: string[] = [];
+  const items: NotesItem[][] = [];
+  for (const text of pieces) {
+    const lines: string[] = [];
+    const pieceItems: (NotesItem & { indent: number })[] = [];
+    let underBreakingHeading = false;
+    for (const line of text.split("\n")) {
+      n++;
+      lines.push(`[${n}] ${line}`);
+      const heading = /^#/.test(line);
+      const entry = line.match(/^(\s*)[*+-]\s/);
+      if (heading) underBreakingHeading = /⚠️|BREAKING[ _-]CHANGE|^#+\s*breaking/i.test(line);
+      const current = pieceItems.at(-1);
+      if (current && !heading && !entry) {
+        current.text += `\n${line}`;
+        current.last = n;
+        continue;
+      }
+      const indent = heading ? -1 : (entry?.[1].length ?? 0);
+      const own = !heading && entry !== null && /⚠️|BREAKING[ _-]CHANGE/.test(line);
+      pieceItems.push({
+        text: line,
+        first: n,
+        last: n,
+        end: n,
+        indent,
+        marked: own || (entry !== null && indent === 0 && underBreakingHeading),
+      });
+    }
+    // Each item's subtree runs to the line before the next item at its depth or shallower.
+    pieceItems.forEach((item, i) => {
+      const next = pieceItems.slice(i + 1).find((later) => later.indent <= item.indent);
+      item.end = next ? next.first - 1 : n;
+    });
+    numbered.push(lines.join("\n"));
+    items.push(pieceItems.map(({ indent, ...item }) => item));
+  }
+  return { numbered, items };
+}

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_SECTION_CHARS, changelogSection, pointedChangelog, resolveReleaseNotes, splitNotes } from "./releaseNotes.js";
+import {
+  MAX_SECTION_CHARS,
+  changelogSection,
+  numberNotes,
+  pointedChangelog,
+  resolveReleaseNotes,
+  splitNotes,
+  type NotesItem,
+} from "./releaseNotes.js";
 
 const WATCHED = "stripe/stripe-node";
 const pointer = (anchor: string) =>
@@ -126,4 +134,23 @@ test("an item or a line longer than a piece is broken up rather than dropped", (
   const pieces = splitNotes(long, 10);
   assert.ok(pieces.every((p) => p.length <= 10), JSON.stringify(pieces));
   assert.equal(pieces.join("").replace(/\n/g, ""), long.replace(/\n/g, ""));
+});
+
+test("numbered notes: one number per line across pieces, and items with their sub-items", () => {
+  const { numbered, items } = numberNotes([
+    "## 23.0.0\n* ⚠️ Remove `a`\n  * from `X`\n\n* Add `b`",
+    "### Breaking changes\n* `c` takes an object\n* not a breaking change, despite saying so\n### Fixes\n* `d`",
+    '"⚠️" symbol highlights breaking changes.\n### ⚠️ Removed\n* Remove `e`',
+  ]);
+  assert.equal(numbered[0], "[1] ## 23.0.0\n[2] * ⚠️ Remove `a`\n[3]   * from `X`\n[4] \n[5] * Add `b`");
+  assert.ok(numbered[1].startsWith("[6] ### Breaking changes\n[7] * `c` takes an object"));
+  const brief = (piece: NotesItem[]) => piece.map((i) => [i.first, i.last, i.marked]);
+  // A nested entry is an item of its own; its parent's subtree runs to the end of it.
+  assert.deepEqual(brief(items[0]), [[1, 1, false], [2, 2, true], [3, 4, false], [5, 5, false]]);
+  assert.equal(items[0][1].text, "* ⚠️ Remove `a`");
+  assert.deepEqual(items[0].map((i) => i.end), [5, 4, 4, 5]);
+  // Under a "Breaking changes" heading every entry is marked, until the next heading; the heading itself isn't.
+  assert.deepEqual(brief(items[1]), [[6, 6, false], [7, 7, true], [8, 8, true], [9, 9, false], [10, 10, false]]);
+  // A ⚠️ heading marks its entries; a ⚠️ in prose marks nothing.
+  assert.deepEqual(brief(items[2]), [[11, 11, false], [12, 12, false], [13, 13, true]]);
 });

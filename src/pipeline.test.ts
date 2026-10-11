@@ -91,6 +91,41 @@ test("fix branch names are stable and valid git refs whatever the input", () => 
   assert.doesNotMatch(weird, /\.\.|[.-]$|\/[.-]/);
 });
 
+test("a fix branch is keyed on the changelog item, so a renamed change finds its earlier PR", () => {
+  const item = "* ⚠️ Remove `charges.create`; use `paymentIntents.create`";
+  const sourced = { ...change, source: item };
+  // The model named it differently on a retry: same item, same branch.
+  const renamed = { ...sourced, methodName: "stripe.charges.create", entry: "v18.0.0: charges.create is gone." };
+  assert.equal(fixBranchName(renamed, "a.js"), fixBranchName(sourced, "a.js"));
+  assert.equal(fixBranchName({ ...sourced, source: `  ${item.replace(" ", "\n ")}  ` }, "a.js"), fixBranchName(sourced, "a.js"));
+  assert.notEqual(fixBranchName({ ...sourced, source: "* ⚠️ Remove `refunds.create`" }, "a.js"), fixBranchName(sourced, "a.js"));
+  assert.notEqual(fixBranchName({ ...sourced, version: "v19.0.0" }, "a.js"), fixBranchName(sourced, "a.js"));
+  assert.match(fixBranchName(sourced, "src/a.js"), /^api-dependabot\/v18\.0\.0-[0-9a-f]{12}-src-a\.js$/);
+});
+
+test("changes from one changelog item share one PR per file, which answers all of them", async () => {
+  const { deps, calls } = fakes();
+  const item = "* ⚠️ Remove `charges.create` and `charges.update`";
+  const changes: DetectedChange[] = [
+    { ...change, source: item },
+    { version: "v18.0.0", entry: "v18.0.0: `charges.update` removed.", methodName: "charges.update", source: item },
+  ];
+  const entries: string[] = [];
+  const generatePatch = deps.generatePatch;
+  deps.generatePatch = async (entry, file, code) => (entries.push(entry), generatePatch(entry, file, code));
+  const titles: string[] = [];
+  const openFixPr = deps.openFixPr;
+  deps.openFixPr = async (branch, file, content, title, body) => (titles.push(title), openFixPr(branch, file, content, title, body));
+
+  const result = await processReleases({ changes, latestTag: "v18.0.0" }, deps, opts);
+
+  assert.deepEqual(result.changes.map((c) => c.patches.map((p) => p.status)), [["pr_opened", "pr_opened"], ["pr_exists", "pr_exists"]]);
+  assert.deepEqual(calls.generatePatch, ["/repo/a.js", "/repo/b.js"]); // no second patch for either file
+  assert.ok(entries.every((e) => e === `${changes[0].entry}\n${changes[1].entry}`));
+  assert.deepEqual(titles, ["Fix breaking change: charges.create, charges.update", "Fix breaking change: charges.create, charges.update"]);
+  assert.deepEqual(calls.markedSeen, ["v18.0.0"]);
+});
+
 test("releases whose changelog couldn't be read stay unseen, even with no failed fixes", async () => {
   const { deps, calls } = fakes();
   const result = await processReleases(
