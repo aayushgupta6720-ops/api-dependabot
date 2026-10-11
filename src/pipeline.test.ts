@@ -25,6 +25,11 @@ function fakes(failFirstPrFor: string[] = []) {
       calls.scanned.push(`reads of ${fieldPath}`);
       return [{ filePath: "/repo/c.js", lineNumbers: [9], snippet: 'use("old c.js");\n' }];
     },
+    findApiVersionPins: (_repo, _pkg, apiVersion) => {
+      calls.scanned.push(`pins other than ${apiVersion}`);
+      const snippet = 'import Stripe from "stripe";\nexport const stripe = new Stripe(key, {\n  apiVersion: "2020-08-27",\n});\n';
+      return [{ filePath: "/repo/utils/stripe.ts", lineNumbers: [3], snippet }];
+    },
     generatePatch: async (_entry, file, code) => {
       calls.generatePatch.push(file);
       return { explanation: "fixed", patchedCode: code.replace("old", "new") };
@@ -210,4 +215,25 @@ test("the entry quoted in a fix PR's body reads back, including merged entries",
   assert.equal(entryFromPrBody(fixPrBody("Did a thing.", entry)), entry);
   assert.equal(entryFromPrBody(`${fixPrBody("x", "v1: y")}\n\nRegenerated with \`npm run regenerate\`.`), "v1: y");
   assert.equal(entryFromPrBody("No quote here."), null);
+});
+
+test("a new pinned API version is patched without the model, and flagged for review", async () => {
+  const { deps, calls } = fakes();
+  const opened: { branch: string; content: string; title: string }[] = [];
+  deps.openFixPr = async (branch, _file, content, title) => (opened.push({ branch, content, title }), "https://github.com/me/repo/pull/1");
+  const pin: DetectedChange = {
+    version: "v11.0.0",
+    entry: "v11.0.0: the pinned API version changed to 2022-11-15.",
+    apiVersion: "2022-11-15",
+    source: "In this release, Stripe API Version `2022-11-15` will be sent by default on all requests.",
+  };
+
+  const result = await processReleases({ changes: [pin], latestTag: "v11.0.0" }, deps, opts);
+
+  assert.deepEqual(calls.scanned, ["pins other than 2022-11-15"]);
+  assert.deepEqual(calls.generatePatch, []); // no model call
+  assert.equal(result.changes[0].patches[0].status, "pr_opened");
+  assert.equal(opened[0].title, "Needs review: apiVersion");
+  assert.match(opened[0].content, /\n {2}\/\/ TODO\(api-dependabot\): v11\.0\.0 pins API version 2022-11-15 \(was 2020-08-27\)\.[^\n]*\n {2}apiVersion: "2022-11-15",\n/);
+  assert.match(opened[0].branch, /^api-dependabot\/v11\.0\.0-[0-9a-f]{12}-utils-stripe\.ts$/);
 });

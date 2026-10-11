@@ -72,11 +72,25 @@ also names the resource whose objects carry a field (`customers` for
 resource is skipped: Customer's `currency` becoming nullable says nothing
 about `balance.available.map((b) => b.currency)`. Reads it can't trace (a
 parameter, a `.then` callback) still count, and so does a field read through
-an expanded object (`invoice.customer.currency`). Before this, the end-to-end
-eval below once got a PR "fixing" that balance read. The scanner reads
+an expanded object (`invoice.customer.currency`). In TypeScript a declared
+type says where an object came from too, so `product: Stripe.Product` is a
+Product. Before this, the end-to-end eval below once got a PR "fixing" that
+balance read, and on a real repo (below) three Product, Price and
+PaymentMethod reads were taken for Customer's. The scanner reads
 `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs` and `.cjs` files, and skips
 `node_modules`, `.d.ts` files and `dist`/`build` output. A test checks that
 it finds the code of every eval fixture.
+
+The pinned API version is handled without the model. Recent stripe-node
+types only accept the one API version a release pins, so TypeScript that
+pins an older one (`apiVersion: '2020-08-27'`) stops compiling, and most
+releases move the pin. The new version is read from the notes ("changes the
+pinned API version to `2025-11-17.clover`", "moving to use the new API
+version") for the newest release among those read, and each older pin in a
+`.ts` file that imports the package becomes the new one, under a
+`TODO(api-dependabot):` comment pointing at Stripe's upgrade guide: the API
+itself behaves differently between versions, so the PR is titled "Needs
+review". In JavaScript an older pin keeps working, so it's left alone.
 
 Before a patch becomes a pull request it has to parse, as TypeScript or
 JavaScript (types aren't checked: the target repo's dependencies aren't
@@ -102,8 +116,11 @@ Some releases don't carry their notes: stripe-node's recent ones just say
 "See [the changelog](…/CHANGELOG.md#22-7-0-alpha-5) for the full release
 notes." For a release that short, the watcher reads that release's section
 of the linked changelog instead (found by the link's anchor, or failing that
-by a heading starting with the version) and sends that to the model. It
-only follows links into `TARGET_PACKAGE_REPO` itself. If the section can't
+by a heading starting with the version) and sends that to the model. A
+longer body counts as a pointer too when it links to the changelog but marks
+no entry of its own as breaking: v10.0.0's and v11.0.0's are a summary, the
+⚠️ legend and "See the changelog for more details". It only follows links
+into `TARGET_PACKAGE_REPO` itself. If the section can't
 be read, the run log and dashboard say so and the release stays unseen, so
 its breaking changes aren't silently missed.
 
@@ -202,6 +219,37 @@ then the patches, the pre-PR check and the type check against stripe
 10.0.0. It passes when every marked entry is accounted for, the two renamed
 or removed methods the repo calls are found, exactly the two affected files
 get PRs, and both patches are right. It takes about five model calls.
+
+```bash
+npm run eval:real
+```
+
+The real-consumer eval runs the agent on an open-source repo:
+[vercel/nextjs-subscription-payments](https://github.com/vercel/nextjs-subscription-payments)
+at the commit before it upgraded stripe from 8.201.0 to 11.13.0. What the
+upgrade breaks is measured rather than guessed: the type errors its
+stripe-using files get under 11.13.0's declarations that they didn't have
+under 8.201.0's. There are two, the same two the maintainers fixed in their
+upgrade commit: the pinned API version, and a Subscription `status` that
+gained `"paused"`, which no longer fits the app's own status type. The agent
+reads the three majors in between, scans, patches (PRs are recorded, not
+opened), and each patched file is type-checked again.
+
+First runs (2026-10-11), each of which changed the agent:
+
+- It read nothing from v10.0.0 or v11.0.0, whose bodies only link to the
+  changelog, and reported both as problems rather than marking them seen.
+  Longer pointer bodies are now followed (above).
+- It then flagged three reads in `supabase-admin.ts` (a Product's `name`, a
+  Price's `currency`, a PaymentMethod's billing details) for v10's
+  now-nullable Customer fields; none broke. Declared types now rule those out.
+- It didn't touch the pinned API version, which isn't a method or a field.
+  It does now.
+
+Result: 1 of the 2 breakages fixed, no PRs on files the upgrade didn't
+break, no new type errors, in four model calls. The miss is the widened
+enum: the fix is in the app's own types (the maintainers changed their
+database schema), and the agent ignores new enum values by design.
 
 The bundled fixtures are 13 real breaking changes pulled straight from
 [stripe-node's own CHANGELOG](https://github.com/stripe/stripe-node/blob/master/CHANGELOG.md)
@@ -334,7 +382,7 @@ error handling, its static copy, and how the Gemini key is sent.
 | LLM patch generation (Gemini) | Working |
 | GitHub PR creation | Working |
 | Changelog watcher | Working — polls GitHub Releases, extracts breaking changes via Gemini |
-| Eval harness | Working — replays fixtures through the patch generator, type-checks each patch against its SDK release, samples each case; plus an end-to-end eval of one real release |
+| Eval harness | Working — replays fixtures through the patch generator, type-checks each patch against its SDK release, samples each case; plus an end-to-end eval of one real release, and one on a real open-source repo's stripe upgrade |
 | Run logging | Working — every run appends structured results to `run-log.jsonl` |
 | Dashboard | Working — read-only view of runs, evals, and watcher health; published to GitHub Pages after each scheduled run |
 

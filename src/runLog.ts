@@ -15,7 +15,8 @@ export interface ChangeLogEntry {
   version: string;
   entry: string;
   methodName?: string; // what was scanned for: a method's calls,
-  fieldPath?: string; // or a field's reads
+  fieldPath?: string; // or a field's reads,
+  apiVersion?: string; // or pins of an older API version than this one
   usagesFound: number;
   patches: PatchLogEntry[];
   error?: string;

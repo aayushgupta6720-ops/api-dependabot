@@ -11,6 +11,7 @@ import type { UsageMatch } from "./scanner.js";
 export interface PipelineDeps {
   findUsages(repoPath: string, packageName: string, methodName: string): UsageMatch[];
   findFieldUsages(repoPath: string, packageName: string, fieldPath: string, resource?: string): UsageMatch[];
+  findApiVersionPins(repoPath: string, packageName: string, apiVersion: string): UsageMatch[];
   generatePatch(changelogEntry: string, affectedFilePath: string, affectedCode: string): Promise<PatchResult>;
   findFixPr(branch: string): Promise<string | null>;
   openFixPr(branch: string, filePath: string, content: string, title: string, body: string): Promise<string>;
@@ -112,6 +113,32 @@ export function fixScopes(changes: DetectedChange[]): FixScope[] {
   );
 }
 
+/**
+ * The patch for a pinned API version, made without the model: each pinned
+ * value becomes the new one, under a review comment, since the API itself
+ * behaves differently between versions and a person should read Stripe's
+ * changelog before merging.
+ */
+export function repinApiVersion(usage: UsageMatch, release: string, apiVersion: string): PatchResult {
+  const eol = usage.snippet.includes("\r\n") ? "\r\n" : "\n";
+  const lines = usage.snippet.split(/\r?\n/);
+  const old: string[] = [];
+  for (const n of [...usage.lineNumbers].sort((a, b) => b - a)) {
+    const line = lines[n - 1];
+    const m = line.match(/(apiVersion["']?\s*:\s*)(["'`])([^"'`]*)\2/);
+    if (!m) continue;
+    old.push(m[3]);
+    lines[n - 1] = line.replace(m[0], `${m[1]}${m[2]}${apiVersion}${m[2]}`);
+    const indent = line.match(/^\s*/)![0];
+    lines.splice(n - 1, 0, `${indent}// ${REVIEW_MARKER}: ${release} pins API version ${apiVersion} (was ${m[3]}). The API behaves differently between versions: read https://docs.stripe.com/upgrades before merging.`);
+  }
+  const from = [...new Set(old)].join(", ");
+  return {
+    explanation: `Moved the pinned API version from ${from} to ${apiVersion}, which ${release} requires; flagged for review, since the API's behaviour changes between versions.`,
+    patchedCode: lines.join(eol),
+  };
+}
+
 /** Scan for one change's call sites and open a fix PR per affected file.
  * A failure is recorded in the returned entry, never thrown, so later files
  * and changes still get processed. */
@@ -126,13 +153,17 @@ export async function processChange(
     entry: change.entry,
     methodName: change.methodName,
     fieldPath: change.fieldPath,
+    apiVersion: change.apiVersion,
     usagesFound: 0,
     patches: [],
   };
 
   try {
     let usages;
-    if (change.fieldPath) {
+    if (change.apiVersion) {
+      console.log(`Scanning ${opts.repoPath} for API versions pinned to something other than ${change.apiVersion}...`);
+      usages = deps.findApiVersionPins(opts.repoPath, opts.targetPackage, change.apiVersion);
+    } else if (change.fieldPath) {
       console.log(`Scanning ${opts.repoPath} for reads of "${change.fieldPath}"...`);
       usages = deps.findFieldUsages(opts.repoPath, opts.targetPackage, change.fieldPath, change.resource);
     } else {
@@ -164,7 +195,9 @@ export async function processChange(
           continue;
         }
 
-        const patch = await deps.generatePatch(scope.entry, usage.filePath, usage.snippet);
+        const patch = change.apiVersion
+          ? repinApiVersion(usage, change.version, change.apiVersion)
+          : await deps.generatePatch(scope.entry, usage.filePath, usage.snippet);
         const { explanation } = patch;
         const patchedCode = matchFileEnding(patch.patchedCode, usage.snippet);
 

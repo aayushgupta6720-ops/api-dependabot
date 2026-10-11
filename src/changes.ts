@@ -9,6 +9,7 @@ export interface DetectedChange {
   methodName?: string; // a method callers call, e.g. "charges.create"
   fieldPath?: string; // a field callers read off a returned object, e.g. "payment_method_details.blik.expires_after"; "[]" marks array elements
   resource?: string; // for a field: the client resource whose objects carry it, e.g. "customers", "issuing.cards"
+  apiVersion?: string; // the API version the SDK now pins; in TypeScript, code pinning another one stops compiling
   // The changelog item that states the change (its list entry, with any
   // sub-items), as the notes have it. Fix branches are keyed on it: the notes
   // say the same thing every run, while the model may word or name a change
@@ -18,7 +19,7 @@ export interface DetectedChange {
 
 /** The method or field a change is about, for logs, branch names and PR titles. */
 export function changeTarget(change: DetectedChange): string {
-  return change.fieldPath ?? change.methodName ?? "";
+  return change.fieldPath ?? change.methodName ?? (change.apiVersion ? "apiVersion" : "");
 }
 
 // How a patch marks code it couldn't fix (something removed with no

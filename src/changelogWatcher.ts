@@ -2,7 +2,7 @@ import { Octokit } from "@octokit/rest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { config } from "./config.js";
 import { extractBreakingChanges, type DetectedChange } from "./llmClient.js";
-import { resolveReleaseNotes } from "./releaseNotes.js";
+import { apiVersionChange, resolveReleaseNotes } from "./releaseNotes.js";
 import { isRelevant } from "./versions.js";
 
 const octokit = new Octokit({ auth: config.githubToken });
@@ -105,8 +105,10 @@ export async function checkForBreakingChanges(installed: string | null = null): 
   for (const problem of problems) console.warn(problem);
   for (const item of found.notPatched) console.log(`Breaking, nothing to patch: ${item.entry}`);
 
+  // The pinned API version moves with most releases now; it needs no model to find.
+  const pin = apiVersionChange(readable);
   return {
-    changes: found.changes,
+    changes: pin ? [...found.changes, pin] : found.changes,
     latestTag: unseen.length > 0 ? unseen[unseen.length - 1].tag_name : null,
     notesProblems: problems,
     notPatched: found.notPatched,

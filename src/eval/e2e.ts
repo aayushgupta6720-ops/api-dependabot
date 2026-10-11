@@ -15,7 +15,8 @@ import { fileURLToPath } from "node:url";
 import { REVIEW_MARKER } from "../changes.js";
 import { extractBreakingChanges, generatePatch } from "../llmClient.js";
 import { processReleases } from "../pipeline.js";
-import { findFieldUsages, findUsages } from "../scanner.js";
+import { apiVersionChange } from "../releaseNotes.js";
+import { findApiVersionPins, findFieldUsages, findUsages } from "../scanner.js";
 import { addedErrors, sdkRoot, typeErrors } from "./sdkTypes.js";
 
 const HERE = path.join(path.dirname(fileURLToPath(import.meta.url)), "e2e");
@@ -56,10 +57,15 @@ async function main() {
   const opened: { file: string; content: string; title: string }[] = [];
   const seen: string[] = [];
   const result = await processReleases(
-    { changes: extraction.changes, latestTag: RELEASE.version, notesProblems: extraction.problems },
+    {
+      changes: [...extraction.changes, ...[apiVersionChange([RELEASE])].filter((c) => c !== null)],
+      latestTag: RELEASE.version,
+      notesProblems: extraction.problems,
+    },
     {
       findUsages,
       findFieldUsages,
+      findApiVersionPins,
       generatePatch,
       findFixPr: async () => null,
       openFixPr: async (_branch, file, content, title) => {

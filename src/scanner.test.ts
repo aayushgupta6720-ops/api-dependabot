@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { fieldSegments, findFieldUsages, findUsages, readsField } from "./scanner.js";
+import { fieldSegments, findApiVersionPins, findFieldUsages, findUsages, readsField } from "./scanner.js";
 
 /** A throwaway repo with the given files; returns its path. */
 function repo(files: Record<string, string>): string {
@@ -122,6 +122,18 @@ export function show(someCustomer) { return someCustomer.currency; }
   // a parameter's, since the code doesn't say where it came from.
   assert.deepEqual(lines(findFieldUsages(dir, "stripe", "currency", "customers")), { "customers.js": [4, 6, 8, 9] });
   assert.deepEqual(lines(findFieldUsages(dir, "stripe", "currency", "balance")), { "balance.js": [4, 5], "customers.js": [9] });
+  // In TypeScript, a declared SDK type says where an object came from, parameters included.
+  const ts = repo({
+    "admin.ts": `import Stripe from "stripe";
+export function product(product: Stripe.Product) { return product.name; }
+export function price(price: Stripe.Price) { return price.currency; }
+export function billing(pm: Stripe.PaymentMethod) { const { name, phone } = pm.billing_details; return [name, phone]; }
+export function customer(c: Stripe.Customer) { return c.name; }
+export function session(s: Stripe.Checkout.Session) { return s.currency; }
+`,
+  });
+  assert.deepEqual(lines(findFieldUsages(ts, "stripe", "name", "customers")), { "admin.ts": [5] });
+  assert.deepEqual(lines(findFieldUsages(ts, "stripe", "currency", "checkout.sessions")), { "admin.ts": [6] });
   // Without a resource, every read counts, as before.
   assert.deepEqual(lines(findFieldUsages(dir, "stripe", "currency")), { "balance.js": [4, 5], "customers.js": [4, 6, 8, 9] });
 });
@@ -216,4 +228,20 @@ test("every eval fixture's code is found by the scanner", async () => {
     return found.length === 0;
   });
   assert.deepEqual(missed.map((c) => c.id), []);
+});
+
+test("a pinned API version other than the new one is found, in TypeScript that uses the package", () => {
+  const dir = repo({
+    "utils/stripe.ts": `import Stripe from "stripe";
+export const stripe = new Stripe(key, {
+  // https://github.com/stripe/stripe-node#configuration
+  apiVersion: '2020-08-27',
+});
+`,
+    "current.ts": `import Stripe from "stripe";\nconst s = new Stripe(k, { apiVersion: "2022-11-15" });\n`,
+    "quoted.ts": `import Stripe from "stripe";\nconst s = new Stripe(k, { "apiVersion": "2019-12-03" });\n`,
+    "plain.js": `const Stripe = require("stripe");\nconst s = Stripe(k, { apiVersion: "2019-12-03" });\n`, // still works in JS
+    "other.ts": `const config = { apiVersion: "v2" };\n`, // not the SDK's
+  });
+  assert.deepEqual(lines(findApiVersionPins(dir, "stripe", "2022-11-15")), { "stripe.ts": [4], "quoted.ts": [2] });
 });

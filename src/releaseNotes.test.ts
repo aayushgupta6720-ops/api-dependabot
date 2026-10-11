@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MAX_SECTION_CHARS,
+  apiVersionChange,
+  pinnedApiVersion,
   changelogSection,
   numberNotes,
   pointedChangelog,
@@ -32,13 +34,32 @@ This release changes the pinned API version to \`2026-09-23.preview\`.
 
 test("a short body linking into the watched repo's changelog is a pointer", () => {
   assert.deepEqual(pointedChangelog(pointer("22-7-0-alpha-5"), WATCHED), {
-    repo: "stripe/stripe-node", ref: "private-preview", path: "CHANGELOG.md", anchor: "22-7-0-alpha-5",
+    repo: "stripe/stripe-node", ref: "private-preview", path: "CHANGELOG.md", anchor: "22-7-0-alpha-5", pointerOnly: true,
+  });
+});
+
+test("a longer body that links to the changelog but marks nothing breaking itself is a pointer too", () => {
+  // stripe-node's v10.0.0 release body, 743 characters; its breaking changes are only in the changelog.
+  const v10 = `Major version release for API version 2022-08-01. Default API version changed to "2022-08-01".
+
+Breaking changes that arose during code generation of the library that we postponed for the next major version. For changes to the SDK, read more detailed description at https://github.com/stripe/stripe-node/wiki/Migration-guide-for-v10. For changes to the Stripe products, read more at https://docs.stripe.com/changelog/2022-08-01.
+
+"⚠️" symbol highlights breaking changes.
+
+* [#1497](https://github.com/stripe/stripe-node/pull/1497) API Updates
+* [#1493](https://github.com/stripe/stripe-node/pull/1493) Next major release changes
+
+See [the changelog for more details](https://github.com/stripe/stripe-node/blob/v10.0.0/CHANGELOG.md).`;
+  assert.deepEqual(pointedChangelog(v10, WATCHED), {
+    repo: "stripe/stripe-node", ref: "v10.0.0", path: "CHANGELOG.md", anchor: "", pointerOnly: false,
   });
 });
 
 test("real notes, links elsewhere and bodies without a link are left alone", () => {
   const longNotes = "* ⚠️ Remove `charges.create`\n".repeat(20) + pointer("22-7-0");
   assert.equal(pointedChangelog(longNotes, WATCHED), null);
+  const longWithoutChangelog = "* Add `x`\n".repeat(60) + "See https://github.com/stripe/stripe-node/blob/v1/README.md";
+  assert.equal(pointedChangelog(longWithoutChangelog, WATCHED), null);
   // notes are written by a third party: they can't send the watcher to another repo
   assert.equal(pointedChangelog(pointer("x").replace("stripe/stripe-node", "evil/repo"), WATCHED), null);
   assert.equal(pointedChangelog("Bug fixes.", WATCHED), null);
@@ -98,6 +119,11 @@ test("a changelog that can't be fetched, or lacks the release, is reported, not 
     async () => CHANGELOG
   );
   assert.match(missing.problems[0], /no section for this release/);
+
+  // A longer body has a summary of its own: without a section it's used as it is, and nothing's reported.
+  const summary = `Major release.\n${"Details. ".repeat(40)}\nSee [the changelog](https://github.com/stripe/stripe-node/blob/v23.0.0/CHANGELOG.md).`;
+  const kept = await resolveReleaseNotes([{ version: "v23.0.0", notes: summary }], WATCHED, async () => CHANGELOG);
+  assert.deepEqual(kept, { releases: [{ version: "v23.0.0", notes: summary }], problems: [] });
 });
 
 test("a long section is kept whole, and only an absurd one is reported instead of cut", async () => {
@@ -153,4 +179,34 @@ test("numbered notes: one number per line across pieces, and items with their su
   assert.deepEqual(brief(items[1]), [[6, 6, false], [7, 7, true], [8, 8, true], [9, 9, false], [10, 10, false]]);
   // A ⚠️ heading marks its entries; a ⚠️ in prose marks nothing.
   assert.deepEqual(brief(items[2]), [[11, 11, false], [12, 12, false], [13, 13, true]]);
+});
+
+test("the pinned API version is read from each way stripe-node's notes have said it", () => {
+  const said = {
+    "This release changes the pinned API version to `2025-11-17.clover`.": "2025-11-17.clover",
+    "  This release changes the pinned API version to 2024-06-20. Please read the [API Changelog](https://docs.stripe.com/changelog/2024-06-20)": "2024-06-20",
+    'Major version release for API version 2022-08-01. Default API version changed to "2022-08-01".': "2022-08-01",
+    "  In this release, Stripe API Version `2022-11-15` (the latest at time of release) will be sent by default on all requests.": "2022-11-15",
+    'This release includes breaking changes resulting from moving to use the new API version "2022-11-15". To learn more': "2022-11-15",
+  };
+  for (const [line, version] of Object.entries(said)) {
+    assert.deepEqual(pinnedApiVersion(`## 1.0.0\n${line}\n* Add \`x\``), { apiVersion: version, line }, line);
+  }
+  assert.equal(pinnedApiVersion("* Expose the API version pinned in the SDK via `Stripe.API_VERSION`"), null);
+  assert.equal(pinnedApiVersion("* Add support for `2024-06-20` dates"), null);
+});
+
+test("only the newest pin among the releases becomes a change", () => {
+  const change = apiVersionChange([
+    { version: "v17.0.0", notes: "This release changes the pinned API version to `2024-09-30.acacia`." },
+    { version: "v17.1.0", notes: "* Add `x`" },
+    { version: "v18.0.0", notes: "This release changes the pinned API version to `2025-03-31.basil`.\n* ⚠️ Remove `y`" },
+  ]);
+  assert.deepEqual(change, {
+    version: "v18.0.0",
+    entry: "v18.0.0: the pinned API version changed to 2025-03-31.basil.",
+    apiVersion: "2025-03-31.basil",
+    source: "This release changes the pinned API version to `2025-03-31.basil`.",
+  });
+  assert.equal(apiVersionChange([{ version: "v1.0.1", notes: "* Fix `z`" }]), null);
 });

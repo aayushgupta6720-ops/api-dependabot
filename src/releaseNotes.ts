@@ -1,3 +1,5 @@
+import type { DetectedChange } from "./changes.js";
+
 /**
  * Some releases don't carry their notes. stripe-node's recent ones are just
  * "See [the changelog](https://github.com/stripe/stripe-node/blob/private-preview/CHANGELOG.md#22-7-0-alpha-5)
@@ -15,34 +17,41 @@ export interface ChangelogLink {
   repo: string; // "owner/name"
   ref: string;
   path: string;
-  anchor: string;
+  anchor: string; // "" when the link has none: the section is then found by its version heading
+  pointerOnly: boolean; // the body is nothing but the link, so without the section there are no notes at all
 }
 
 /** Reads one file of a GitHub repo at a ref; passed in so tests can fake it. */
 export type FetchFile = (repo: string, ref: string, path: string) => Promise<string>;
 
-// Only a body this short counts as a pointer: stripe-node's are ~135 chars,
-// real notes run to thousands. Longer notes are used as they are, even if
-// they also link to the changelog.
+// A body this short is only a pointer: stripe-node's recent ones are ~135 chars.
 const POINTER_MAX_CHARS = 300;
 // A section past this is reported rather than read. stripe-node's v23.0.0
 // is 45,500 characters, read in pieces (see splitNotes); one many times that
 // would be a changelog the watcher has misparsed, or one too costly to read.
 export const MAX_SECTION_CHARS = 250_000;
 
-const LINK_RE = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/blob\/([^/\s)#]+)\/([^\s)#]+)#([\w.-]+)/;
+const LINK_RE = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/blob\/([^/\s)#]+)\/([^\s)#]+)(?:#([\w.-]+))?/g;
 
 /**
- * The changelog a release's notes point to instead of containing, or null if
- * they have notes of their own. Only links into `watchedRepo` count: the
- * notes are written by a third party, so they don't get to send the watcher
- * anywhere else.
+ * The changelog a release's notes point to instead of containing in full, or
+ * null if they have notes of their own. That's a short body with a link into
+ * the watched repo, or a longer one that links to its CHANGELOG but marks no
+ * entry of its own as breaking: stripe-node's v10.0.0 and v11.0.0 bodies are a
+ * summary, the ⚠️ legend and "See the changelog for more details", with the
+ * breaking changes only in the changelog. Only links into `watchedRepo` count:
+ * the notes are written by a third party, so they don't get to send the
+ * watcher anywhere else.
  */
 export function pointedChangelog(notes: string, watchedRepo: string): ChangelogLink | null {
-  if (notes.trim().length > POINTER_MAX_CHARS) return null;
-  const m = notes.match(LINK_RE);
-  if (!m || m[1].toLowerCase() !== watchedRepo.toLowerCase()) return null;
-  return { repo: m[1], ref: m[2], path: m[3], anchor: m[4] };
+  const links = [...notes.matchAll(LINK_RE)].filter((m) => m[1].toLowerCase() === watchedRepo.toLowerCase());
+  const pointerOnly = notes.trim().length <= POINTER_MAX_CHARS;
+  const m = pointerOnly
+    ? links.find((l) => l[4]) ?? links[0]
+    : links.find((l) => /(^|\/)changelog\.md$/i.test(l[3]));
+  if (!m) return null;
+  if (!pointerOnly && numberNotes([notes]).items[0].some((item) => item.marked)) return null;
+  return { repo: m[1], ref: m[2], path: m[3], anchor: m[4] ?? "", pointerOnly };
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -95,6 +104,10 @@ export async function resolveReleaseNotes(
     try {
       if (!files.has(file)) files.set(file, fetchFile(link.repo, link.ref, link.path));
       const section = changelogSection(await files.get(file)!, link.anchor, release.version);
+      if (section === null && !link.pointerOnly) {
+        resolved.push(release); // the body's own summary is the best there is
+        continue;
+      }
       if (section === null) throw new Error("it has no section for this release");
       if (section.length > MAX_SECTION_CHARS) {
         throw new Error(`its section is ${section.length} characters, over the ${MAX_SECTION_CHARS} read`);
@@ -208,4 +221,52 @@ export function numberNotes(pieces: string[]): { numbered: string[]; items: Note
     items.push(pieceItems.map(({ indent, ...item }) => item));
   }
   return { numbered, items };
+}
+
+// How stripe-node's notes announce a new pinned API version, from v10.0.0 on:
+// 'moving to use the new API version "2022-11-15"' (v10, v11), 'In this
+// release, Stripe API Version `2022-11-15` ... will be sent by default' (v12),
+// and since then 'This release changes the pinned API version to
+// `2025-11-17.clover`.' Minor releases move it too.
+const API_VERSION = String.raw`[\x60"']?(\d{4}-\d{2}-\d{2}(?:\.[a-z]+)?)[\x60"']?`;
+const PIN_RES = [
+  new RegExp(String.raw`pinned API version to ${API_VERSION}`, "i"),
+  new RegExp(String.raw`default API version changed to ${API_VERSION}`, "i"),
+  new RegExp(String.raw`\bnew API version ${API_VERSION}`, "i"),
+  new RegExp(String.raw`API version ${API_VERSION}[^.\n]*\bby default\b`, "i"),
+];
+
+/** The API version a release's notes say the SDK now pins, and the line that
+ * says so; null if they don't. The last one wins if there are several. */
+export function pinnedApiVersion(notes: string): { apiVersion: string; line: string } | null {
+  let found: { apiVersion: string; line: string } | null = null;
+  for (const line of notes.split("\n")) {
+    for (const re of PIN_RES) {
+      const m = line.match(re);
+      if (m) {
+        found = { apiVersion: m[1], line };
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/** A change for the newest API version these releases pin, if any of them
+ * moves it: only the last one matters, since that's the version the code ends
+ * up on. Keyed, like any change, on the notes' line that says so. */
+export function apiVersionChange(releases: Release[]): DetectedChange | null {
+  let latest: DetectedChange | null = null;
+  for (const release of releases) {
+    const pin = pinnedApiVersion(release.notes);
+    if (pin) {
+      latest = {
+        version: release.version,
+        entry: `${release.version}: the pinned API version changed to ${pin.apiVersion}.`,
+        apiVersion: pin.apiVersion,
+        source: pin.line,
+      };
+    }
+  }
+  return latest;
 }

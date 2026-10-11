@@ -45,6 +45,7 @@ test("the model's changes become method or field changes; unusable ones are repo
       { version: "v1 (part 2 of 3)", line: 2, entry: "v1: `Mandate.x.y` removed.", kind: "field", fieldPath: "x.y", methodName: "mandates.retrieve", resource: "mandates" },
       { version: "v1", line: 1, entry: "no target" },
       { version: "v1", line: 1, entry: "field without a path", kind: "field" },
+      { version: "v1", entry: "field without a path or a line", kind: "field" },
       "not an object",
     ],
     notPatched: [{ version: "v1", line: 1, entry: "v1: Node 18 dropped; no call to patch." }, { entry: "no version" }],
@@ -58,7 +59,10 @@ test("the model's changes become method or field changes; unusable ones are repo
     { version: "v1", entry: "v1: `charges.create` removed.", methodName: "charges.create", source: "* ⚠️ several things" },
     { version: "v1", entry: "v1: `Mandate.x.y` removed.", fieldPath: "x.y", resource: "mandates", source: "  - and a sub-item" },
   ]);
-  assert.deepEqual(result.notPatched, [{ version: "v1", entry: "v1: Node 18 dropped; no call to patch." }]);
+  assert.deepEqual(result.notPatched, [
+    { version: "v1", entry: "v1: Node 18 dropped; no call to patch." },
+    { version: "v1", entry: "field without a path (names no field to scan for)" }, // it says where it's from
+  ]);
   assert.equal(result.problems.length, 3);
   assert.ok(result.problems.every((p) => p.startsWith("the model described a breaking change unusably")));
 });

@@ -11,6 +11,7 @@
     "eval": "tsx src/eval/run.ts",
     "eval:sdks": "tsx src/eval/downloadSdks.ts",
     "eval:e2e": "tsx src/eval/e2e.ts",
+    "eval:real": "tsx src/eval/realConsumer.ts",
     "dashboard": "tsx src/dashboard/server.ts",
     "dashboard:build": "tsx src/dashboard/build.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\""

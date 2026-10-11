@@ -539,8 +539,10 @@ function calleeNames(callee: Node): string[] | undefined {
  * shows it: "balance" for `b.currency` in
  * `const balance = await stripe.balance.retrieve(); balance.available.map((b) => b.currency)`.
  * Followed through awaits, array callbacks and for-of loops, destructuring
- * and aliases (`const lines = page.data`). Undefined when the code doesn't say
- * (a parameter, an import, a `.then` callback).
+ * and aliases (`const lines = page.data`). In TypeScript a declared type says
+ * it too: `product: Stripe.Product` is a Product, returned as "type:Product".
+ * Undefined when the code doesn't say (an untyped parameter, an import, a
+ * `.then` callback).
  */
 function originResource(node: Node, seen = new Set<Node>()): string | undefined {
   let current: Node = node;
@@ -563,8 +565,21 @@ function originResource(node: Node, seen = new Set<Node>()): string | undefined 
   if (collection) return originResource(collection, seen);
   let holder: Node | undefined = current.getSymbol()?.getDeclarations()[0];
   while (holder && Node.isBindingElement(holder)) holder = holder.getParent()?.getParent();
+  if (holder && (Node.isVariableDeclaration(holder) || Node.isParameterDeclaration(holder))) {
+    const declared = sdkTypeName(holder.getTypeNode());
+    if (declared) return `type:${declared}`;
+  }
   const init = holder && Node.isVariableDeclaration(holder) ? holder.getInitializer() : undefined;
   return init ? originResource(init, seen) : undefined;
+}
+
+/** The SDK type a declared type names, without its namespace: "Product" for
+ * `Stripe.Product`, "Session" for `Stripe.Checkout.Session`. Undefined for a
+ * type that isn't a qualified name (the code's own types, unions, generics). */
+function sdkTypeName(type: Node | undefined): string | undefined {
+  if (!type || !Node.isTypeReference(type)) return undefined;
+  const name = type.getTypeName();
+  return Node.isQualifiedName(name) ? name.getRight().getText() : undefined;
 }
 
 /** Whether objects from `origin` can carry `resource`'s field: the same resource,
@@ -572,10 +587,16 @@ function originResource(node: Node, seen = new Set<Node>()): string | undefined 
  * `invoice.customer.currency` is a Customer's currency, read off an invoice). */
 function fromResource(origin: string, resource: string, path: string[]): boolean {
   const norm = (r: string) => r.toLowerCase().replace(/[^a-z0-9.]/g, "");
-  const [a, b] = [norm(origin), norm(resource)];
-  if (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)) return true;
+  const b = norm(resource);
   const singular = b.split(".").at(-1)!.replace(/ies$/, "y").replace(/s$/, "");
-  return path.some((segment) => norm(segment) === singular);
+  if (origin.startsWith("type:")) {
+    // A declared type is singular and unqualified: Customer for "customers", Session for "checkout.sessions".
+    if (norm(origin.slice(5)) === singular) return true;
+  } else {
+    const a = norm(origin);
+    if (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)) return true;
+  }
+  return path.some((segment) => norm(segment).replace(/_/g, "") === singular);
 }
 
 export function findFieldUsages(
@@ -623,5 +644,29 @@ export function findFieldUsages(
     if (lineNumbers.length > 0) matches.push(toMatch(sourceFile, lineNumbers));
   }
 
+  return matches;
+}
+
+/**
+ * TypeScript that pins an API version other than `apiVersion`: an `apiVersion:
+ * "2020-08-27"` property in a .ts file that imports the package. Recent SDKs
+ * type that property as the one version they pin, so after an upgrade the old
+ * value stops compiling. JavaScript is left alone: there an older pin keeps
+ * working, since the SDK sends whatever version it's given.
+ */
+export function findApiVersionPins(repoPath: string, packageName: string, apiVersion: string): UsageMatch[] {
+  const matches: UsageMatch[] = [];
+  for (const sourceFile of loadSourceFiles(repoPath)) {
+    if (!/\.[mc]?tsx?$/.test(sourceFile.getFilePath()) || !usesPackage(sourceFile, packageName)) continue;
+    const lineNumbers = sourceFile
+      .getDescendantsOfKind(SyntaxKind.PropertyAssignment)
+      .filter((p) => p.getName().replace(/^["']|["']$/g, "") === "apiVersion")
+      .filter((p) => {
+        const value = p.getInitializer();
+        return value !== undefined && Node.isStringLiteral(value) && value.getLiteralText() !== apiVersion;
+      })
+      .map((p) => p.getStartLineNumber());
+    if (lineNumbers.length > 0) matches.push(toMatch(sourceFile, lineNumbers));
+  }
   return matches;
 }

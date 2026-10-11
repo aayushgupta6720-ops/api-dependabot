@@ -264,6 +264,15 @@ If these notes have no breaking changes, return {"changes": [], "notPatched": []
     const described = toDetectedChange(item);
     const change = described && { ...described, version: asTag(described.version)! };
     if (!change) {
+      // A field change with no field in it ("Removed resources `OrderItem` and `OrderReturn`", as v9.0.0
+      // put it) has nothing to scan for, like a "*"-only path: say so rather than fail the release.
+      const c = (item ?? {}) as Record<string, unknown>;
+      const version = asTag(releaseTag(c.version));
+      const entry = typeof c.entry === "string" ? c.entry.trim() : "";
+      if (c.kind === "field" && version && entry && sourceOf(c.line, version)) {
+        result.notPatched.push({ version, entry: `${entry} (names no field to scan for)` });
+        continue;
+      }
       result.problems.push(`the model described a breaking change unusably: ${JSON.stringify(item).slice(0, 300)}`);
       continue;
     }
