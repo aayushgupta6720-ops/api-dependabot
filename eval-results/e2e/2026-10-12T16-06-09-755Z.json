@@ -1,0 +1,246 @@
+{
+  "checks": [
+    {
+      "id": "extraction: every item marked breaking accounted for",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "extraction: the methods the repo calls",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "pipeline: no failed scans or rejected patches",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "pipeline: a PR for each affected file, and none for the rest",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "pipeline: releases marked seen",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "patch: billing.js",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "patch: cards.js",
+      "pass": true,
+      "failures": []
+    }
+  ],
+  "extraction": {
+    "changes": [
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `business_profile` property on `Account` resource changed to be nullable.",
+        "fieldPath": "business_profile",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `business_type` property on `Account` resource changed to be nullable.",
+        "fieldPath": "business_type",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `country` property on `Account` resource changed to be nullable.",
+        "fieldPath": "country",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `default_currency` property on `Account` resource changed to be nullable.",
+        "fieldPath": "default_currency",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `settings` property on `Account` resource changed to be nullable.",
+        "fieldPath": "settings",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `currency` property on `Checkout.Session` resource changed from `string` to `'cad' | 'usd'`.",
+        "fieldPath": "currency",
+        "resource": "checkout.sessions",
+        "source": "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `address` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "address",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `currency` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "currency",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `delinquent` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "delinquent",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `discount` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "discount",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `invoice_prefix` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "invoice_prefix",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `name` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "name",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `phone` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "phone",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `preferred_locales` property on `Customer` resource changed to be nullable.",
+        "fieldPath": "preferred_locales",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Rename `InvoiceRetrieveUpcomingParams` to `InvoiceListUpcomingLinesParams`.\nv10.0.0: Rename `InvoiceRetrieveUpcomingParams` to `InvoiceListUpcomingLinesParams`.",
+        "methodName": "invoices.retrieveUpcoming",
+        "source": "* Rename `InvoiceRetrieveUpcomingParams` to `InvoiceListUpcomingLinesParams`.\n"
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `AlipayAccount` and `BitcoinReceiver` from `CustomerSource`.",
+        "fieldPath": "sources",
+        "resource": "customers",
+        "source": "* Remove `AlipayAccount` and `BitcoinReceiver` from `CustomerSource`."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `Stripe.DeletedAlipayAccount` and `Stripe.DeletedBitcoinReceiver` from possible values of `source` property in `PaymentIntent`.",
+        "fieldPath": "source",
+        "resource": "paymentIntents",
+        "source": "* Remove `Stripe.DeletedAlipayAccount` and `Stripe.DeletedBitcoinReceiver` from possible values of `source` property in `PaymentIntent`."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `retrieveDetails` method from `Issuing.Card` resource.",
+        "methodName": "issuing.cards.retrieveDetails",
+        "source": "* Remove `retrieveDetails` method from `Issuing.Card` resource. The method was unsupported. Read more at https://stripe.com/docs/issuing/cards/virtual."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `recipient` property from `Card` resource.",
+        "fieldPath": "recipient",
+        "resource": "cards",
+        "source": "* Remove `Recipient` resource and`recipient` property from `Card` resource."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `redirect_url` from `LoginLinks` definition.",
+        "fieldPath": "login_links.redirect_url",
+        "resource": "accounts",
+        "source": "* Remove `redirect_url` from `LoginLinks` definition. The property is no longer supported."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Rename `listUpcomingLineItems` method on `Invoice` resource to `listUpcomingLines`.\nv10.0.0: Rename `InvoiceLineItemListUpcomingParams` to `InvoiceListUpcomingLinesParams`.",
+        "methodName": "invoices.listUpcomingLineItems",
+        "source": "* Rename `InvoiceLineItemListUpcomingParams` to `InvoiceListUpcomingLinesParams`.\n\n* Rename `listUpcomingLineItems` method on `Invoice` resource to `listUpcomingLines`."
+      }
+    ],
+    "notPatched": [
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Change location of TypeScript definitions for `CreditNoteLineItemListPreviewParams` and related interfaces. Type definition change only, no runtime impact."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `AlipayAccount`, `BitcoinReceiver`, and related definitions. Types/resources were removed, but there are no active client methods or fields to patch."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `IssuerFraudRecord` and related definitions. Entire resource/definitions removed."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `treasury.received_credit.reversed` webhook event constant. Webhook event constants are not client calls or object fields."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `order.payment_failed`, `transfer.failed`, and `transfer.paid` webhook event constants. Webhook event constants are not client calls or object fields."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `Issuing.CardDetails` and `CardRetrieveDetailsParams` definition. Definitions associated with removed `retrieveDetails` method."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `IssuerFraudRecords` resource. Entire resource removed."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `Recipient` resource. Entire resource removed."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `InvoiceMarkUncollectibleParams` definition. Parameter definition for a method not changed/removed."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove deprecated `Stripe.Errors` and `StripeError` definitions. Error class restructuring that does not affect method calls or object fields."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `LineItemListParams` definition. Interface was no longer in use."
+      }
+    ],
+    "problems": []
+  },
+  "opened": [
+    {
+      "file": "cards.js",
+      "content": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: \"2022-08-01\" });\n\nexport async function getCardDetails(cardId) {\n  // TODO(api-dependabot): retrieveDetails was removed in v10.0.0\n  throw new Error(\"retrieveDetails was removed in v10.0.0\");\n}\n\nexport async function freezeCard(cardId) {\n  return stripe.issuing.cards.update(cardId, { status: \"inactive\" });\n}\n",
+      "title": "Needs review: issuing.cards.retrieveDetails"
+    },
+    {
+      "file": "billing.js",
+      "content": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: \"2022-08-01\" });\n\nexport async function upcomingLines(customerId) {\n  const page = await stripe.invoices.listUpcomingLines({ customer: customerId });\n  return page.data.map((line) => ({ description: line.description, amount: line.amount }));\n}\n",
+      "title": "Fix breaking change: invoices.listUpcomingLineItems"
+    }
+  ]
+}
