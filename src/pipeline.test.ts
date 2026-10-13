@@ -271,6 +271,21 @@ test("changes stated by one item share its related lines, once each", () => {
   assert.deepEqual(scopes[2].related, ["r4"]);
 });
 
+test("a patch that adds type errors gets a second try with them, and keeps the better one", async () => {
+  const { deps, calls } = fakes();
+  const asked: (string[] | undefined)[] = [];
+  deps.generatePatch = async (_entry, _file, code, _related, typeErrors) => {
+    asked.push(typeErrors);
+    return { explanation: typeErrors ? "fixed the types" : "fixed", patchedCode: code.replace("old", typeErrors ? "good" : "bad") };
+  };
+  deps.typeCheck = (_release, _before, after) => (after.includes("bad") ? ["TS2353: apiKey isn't a param"] : []);
+  const result = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
+  assert.deepEqual(asked, [undefined, ["TS2353: apiKey isn't a param"], undefined, ["TS2353: apiKey isn't a param"]]);
+  assert.match(calls.opened[0].title, /^Fix breaking change: /);
+  assert.match(calls.opened[0].body, /^fixed the types/);
+  assert.equal(result.changes[0].patches[0].typeErrors, undefined);
+});
+
 test("a patch that adds type errors still opens, as Needs review with the errors listed", async () => {
   const { deps, calls } = fakes();
   const checked: string[] = [];
@@ -279,7 +294,8 @@ test("a patch that adds type errors still opens, as Needs review with the errors
     return after === before ? [] : ["TS2353: Object literal may only specify known properties"];
   };
   const result = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
-  assert.deepEqual(checked, ["v18.0.0", "v18.0.0"]); // one per affected file
+  // Each affected file: the first patch, then the second try, which is no better.
+  assert.deepEqual(checked, ["v18.0.0", "v18.0.0", "v18.0.0", "v18.0.0"]);
   const opened = calls.opened[0];
   assert.match(opened.title, /^Needs review: charges\.create$/);
   assert.match(opened.body, /adds type errors against stripe v18\.0\.0, so a person needs to finish it:\n- TS2353/);

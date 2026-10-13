@@ -12,7 +12,13 @@ export interface PipelineDeps {
   findUsages(repoPath: string, packageName: string, methodName: string): UsageMatch[];
   findFieldUsages(repoPath: string, packageName: string, fieldPath: string, resource?: string): UsageMatch[];
   findApiVersionPins(repoPath: string, packageName: string, apiVersion: string): UsageMatch[];
-  generatePatch(changelogEntry: string, affectedFilePath: string, affectedCode: string, related?: string[]): Promise<PatchResult>;
+  generatePatch(
+    changelogEntry: string,
+    affectedFilePath: string,
+    affectedCode: string,
+    related?: string[],
+    typeErrors?: string[]
+  ): Promise<PatchResult>;
   // The type errors a patch adds against the SDK at a release (see
   // sdkTypes.addedTypeErrors), or null if they can't be checked.
   typeCheck?(release: string, before: string, after: string): string[] | null;
@@ -219,17 +225,16 @@ export async function processChange(
           continue;
         }
 
-        const patch = change.apiVersion
+        let patch = change.apiVersion
           ? repinApiVersion(usage, change.version, change.apiVersion)
           : await deps.generatePatch(scope.entry, usage.filePath, usage.snippet, scope.related);
-        const { explanation } = patch;
-        const patchedCode = matchFileEnding(patch.patchedCode, usage.snippet);
+        let patchedCode = matchFileEnding(patch.patchedCode, usage.snippet);
 
-        console.log(`${usage.filePath}: ${explanation}`);
+        console.log(`${usage.filePath}: ${patch.explanation}`);
 
         if (patchedCode === usage.snippet) {
           console.log(`No code change needed for ${usage.filePath}. Skipping PR.`);
-          changeLog.patches.push({ filePath: relativePath, status: "no_change_needed", explanation });
+          changeLog.patches.push({ filePath: relativePath, status: "no_change_needed", explanation: patch.explanation });
           continue;
         }
 
@@ -239,10 +244,24 @@ export async function processChange(
         if (problem) throw new Error(`patch rejected: ${problem}`);
 
         // Against the SDK's own types at this release, as the eval checks. A
-        // patch that adds type errors still goes out, for review with them
-        // listed: rejected, its release would stay unseen and be patched the
-        // same way every day.
-        const typeErrors = deps.typeCheck?.(change.version, usage.snippet, patchedCode) ?? [];
+        // patch that adds type errors gets one more try with the errors in
+        // hand; if that still has some, the fewer-errors patch goes out for
+        // review with them listed: rejected, its release would stay unseen
+        // and be patched the same way every day.
+        let typeErrors = deps.typeCheck?.(change.version, usage.snippet, patchedCode) ?? [];
+        if (typeErrors.length && !change.apiVersion) {
+          const second = await deps.generatePatch(scope.entry, usage.filePath, usage.snippet, scope.related, typeErrors);
+          const secondCode = matchFileEnding(second.patchedCode, usage.snippet);
+          const secondErrors = patchProblem(relativePath, usage.snippet, secondCode)
+            ? null
+            : (deps.typeCheck?.(change.version, usage.snippet, secondCode) ?? null);
+          if (secondErrors && secondErrors.length < typeErrors.length) {
+            patch = second;
+            patchedCode = secondCode;
+            typeErrors = secondErrors;
+          }
+        }
+        const { explanation } = patch;
         const body = typeErrors.length
           ? `${explanation}\n\nThis patch adds type errors against ${opts.targetPackage} ${change.version}, so a person needs to finish it:\n${typeErrors.map((e) => `- ${e}`).join("\n")}`
           : explanation;

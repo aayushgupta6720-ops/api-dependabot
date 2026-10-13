@@ -352,21 +352,31 @@ function toDetectedChange(item: unknown): DetectedChange | null {
  * `expires_after` removal flagged the read for review, though the line above
  * it adds `expires_at` for the same date; and the v22.0.0 API-key patch put
  * `{ apiKey }` where the params go, which the next entry says no longer works.
+ *
+ * `typeErrors` are the errors a first patch added against the new SDK's types,
+ * for a second try (see pipeline.ts): even with that next entry, one patch in
+ * five still put the key second, reading "pass `undefined` as the first
+ * argument" as the call's first argument.
  */
 export async function generatePatch(
   changelogEntry: string,
   affectedFilePath: string,
   affectedCode: string,
-  related: string[] = []
+  related: string[] = [],
+  typeErrors: string[] = []
 ): Promise<PatchResult> {
   const context = related.length
     ? `\nRELATED LINES FROM THE SAME RELEASE NOTES (they name the same things; read them for a replacement the entry doesn't name, or for how calls must now be made):\n${related.map((l) => `- ${l}`).join("\n")}\n`
+    : "";
+  const retry = typeErrors.length
+    ? `\nA FIRST PATCH OF THIS FILE didn't type-check against the new SDK version. It added these errors, which this patch must not have:\n${typeErrors.map((e) => `- ${e}`).join("\n")}\n`
     : "";
   const prompt = `You are updating code for a breaking change in an SDK it uses.
 
 CHANGELOG ENTRY (what changed in the new SDK version):
 ${changelogEntry}
 ${context}
+${retry}
 FILE: ${affectedFilePath}
 CURRENT CODE:
 ${affectedCode}

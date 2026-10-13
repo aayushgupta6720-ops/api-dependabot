@@ -12,6 +12,7 @@ interface CaseResult {
   patchedCode: string;
   failures: string[];
   typeChecked: string | null; // the SDK version the patch was type-checked against
+  retried?: boolean; // the first patch added type errors, and the graded one is the second try
 }
 
 /** Type errors the patch adds, checked against the SDK release the change
@@ -28,12 +29,32 @@ function typeCheck(testCase: (typeof cases)[number], patchedCode: string): { ver
 }
 
 async function runCase(testCase: (typeof cases)[number], sample: number): Promise<CaseResult> {
-  const { explanation, patchedCode } = await generatePatch(
+  let { explanation, patchedCode } = await generatePatch(
     testCase.changelogEntry,
     `eval/${testCase.id}.js`,
     testCase.beforeCode,
     testCase.related
   );
+  // As the pipeline does: a patch that adds type errors gets one more try with
+  // them, and the fewer-errors patch is graded. The result says when it took two.
+  let retried = false;
+  const first = patchProblem(`eval/${testCase.id}.ts`, testCase.beforeCode, patchedCode) ? null : typeCheck(testCase, patchedCode);
+  if (first?.added.length) {
+    const second = await generatePatch(
+      testCase.changelogEntry,
+      `eval/${testCase.id}.js`,
+      testCase.beforeCode,
+      testCase.related,
+      first.added
+    );
+    const secondTypes = patchProblem(`eval/${testCase.id}.ts`, testCase.beforeCode, second.patchedCode)
+      ? null
+      : typeCheck(testCase, second.patchedCode);
+    if (secondTypes && secondTypes.added.length < first.added.length) {
+      ({ explanation, patchedCode } = second);
+      retried = true;
+    }
+  }
 
   const found = (check: string | RegExp) =>
     typeof check === "string" ? patchedCode.includes(check) : check.test(patchedCode);
@@ -63,6 +84,7 @@ async function runCase(testCase: (typeof cases)[number], sample: number): Promis
     patchedCode,
     failures,
     typeChecked: types ? `stripe ${types.version}` : null,
+    retried,
   };
 }
 
@@ -92,6 +114,7 @@ async function main() {
           patchedCode: "",
           failures: [`error: ${(err as Error).message}`],
           typeChecked: null,
+          retried: false,
         });
       }
     }
@@ -99,9 +122,11 @@ async function main() {
     const passed = runs.filter((r) => r.pass).length;
     const failures = [...new Set(runs.flatMap((r) => r.failures))];
     const checked = runs.find((r) => r.typeChecked)?.typeChecked;
+    const retried = runs.filter((r) => r.retried).length;
     console.log(
       `${passed === runs.length ? "PASS" : "FAIL"}${samples > 1 ? ` ${passed}/${runs.length}` : ""}` +
         `${checked ? ` (types: ${checked})` : " (types not checked)"}` +
+        `${retried ? ` (${retried} on a second try after type errors)` : ""}` +
         `${failures.length ? ` (${failures.join(", ")})` : ""}`
     );
   }

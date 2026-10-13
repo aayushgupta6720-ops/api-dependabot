@@ -109,9 +109,11 @@ change at most 60% of the file's lines, or 3 in a short file. Correct
 patches in the eval changed 0-43%. A rejected patch is recorded as an
 error, so its release stays unseen and the next run tries again. Then it's
 type-checked against the SDK at the change's release (downloaded once into
-`.cache/sdk/`, as the eval does). A patch that adds type errors still
-opens, titled "Needs review" with the errors listed: rejected, its release
-would stay unseen and get the same patch every day.
+`.cache/sdk/`, as the eval does). A patch that adds type errors gets one
+more try, with the compiler's errors added to the prompt. If the second
+patch still has some, the one with fewer opens, titled "Needs review" with
+the errors listed: rejected, its release would stay unseen and get the same
+patch every day.
 
 On the very first run there's no "last seen" marker yet, so it only looks at
 the single most recent release — it won't replay the SDK's entire history.
@@ -224,7 +226,11 @@ which puts it in the params; v22 declares `retrieve(id, params?, options?)`,
 so it belongs third. It failed 3 samples of 3 every week until the patch was
 given the next line of the notes ("`RequestOptions` must always come
 second"); with it, the patch is `retrieve(id, undefined, { apiKey })`, and
-the case's checks now require that. The type checks also showed two
+the case's checks now require that. One sample in five still put the key
+second, reading "pass `undefined` as the first argument" as the call's
+first argument; the eval now gives a patch that adds type errors the same
+second try the pipeline does, and says when a pass took two. The case then
+passed 5/5. The type checks also showed two
 fixtures that were never type-correct, which the breaking-change error had
 hidden: a webhook call with one argument of three, and an alert missing its
 required `title` and `recurrence`. Both were fixed, so a correct patch now
