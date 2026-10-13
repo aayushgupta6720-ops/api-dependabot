@@ -15,6 +15,10 @@ export interface DetectedChange {
   // say the same thing every run, while the model may word or name a change
   // differently from one run to the next.
   source?: string;
+  // Other entries of the same release's notes that name what this one does
+  // (see relatedLines): a replacement the entry doesn't name, or how the new
+  // version must be called. Context for the patch, not changes of their own.
+  related?: string[];
 }
 
 /** The method or field a change is about, for logs, branch names and PR titles. */

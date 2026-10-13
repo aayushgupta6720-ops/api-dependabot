@@ -5,6 +5,7 @@ import { generatePatch } from "./llmClient.js";
 import { findFixPr, openFixPr } from "./githubClient.js";
 import { processReleases } from "./pipeline.js";
 import { appendRunLog, type RunLogEntry } from "./runLog.js";
+import { addedTypeErrors } from "./sdkTypes.js";
 import { installedVersion } from "./versions.js";
 
 // Path to a LOCAL checkout of the repo you're scanning (clone it first).
@@ -41,7 +42,16 @@ async function main() {
 
     const result = await processReleases(
       releases,
-      { findUsages, findFieldUsages, findApiVersionPins, generatePatch, findFixPr, openFixPr, markReleasesSeen },
+      {
+        findUsages,
+        findFieldUsages,
+        findApiVersionPins,
+        generatePatch,
+        findFixPr,
+        openFixPr,
+        markReleasesSeen,
+        typeCheck: (release, before, after) => addedTypeErrors(config.targetPackage, release, before, after),
+      },
       { repoPath: LOCAL_REPO_PATH, targetPackage: config.targetPackage }
     );
     runLog.changes = result.changes;

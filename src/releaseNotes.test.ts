@@ -7,10 +7,12 @@ import {
   changelogSection,
   numberNotes,
   pointedChangelog,
+  relatedLines,
   resolveReleaseNotes,
   splitNotes,
   type NotesItem,
 } from "./releaseNotes.js";
+import { cases } from "./eval/fixtures.js";
 
 const WATCHED = "stripe/stripe-node";
 const pointer = (anchor: string) =>
@@ -209,4 +211,58 @@ test("only the newest pin among the releases becomes a change", () => {
     source: "This release changes the pinned API version to `2025-03-31.basil`.",
   });
   assert.equal(apiVersionChange([{ version: "v1.0.1", notes: "* Fix `z`" }]), null);
+});
+
+// Excerpts of stripe-node's notes, as the watcher reads them.
+const ALPHA4 = `## <a id="22-7-0-alpha-4"></a>22.7.0-alpha.4 - 2026-09-17
+* [#2850](https://github.com/stripe/stripe-node/pull/2850) Update generated code for private-preview
+  * Add support for \`appeal\` on \`Dispute.evidence\`
+  * Add support for \`pricing_token\` on \`InvoiceCreatePreviewParams\`
+  * Add support for \`expires_at\` on \`Mandate.payment_method_details.blik\`, \`PaymentIntent.next_action.swish_handle_redirect_or_display_qr_code.qr_code\`, and \`Subscription.payment_settings.payment_method_options.blik.mandate_options\`
+  * ⚠️ Remove support for \`expires_after\` on \`Mandate.payment_method_details.blik\` and \`Subscription.payment_settings.payment_method_options.blik.mandate_options\`
+  * Add support for \`momo\` on \`PaymentAttemptRecord.payment_method_details\` and \`PaymentRecord.payment_method_details\``;
+
+const V22 = `## 22.0.0 - 2026-03-25
+* [#2645](https://github.com/stripe/stripe-node/pull/2645) ⚠️ Remove \`stripeMethod\` and standardize how function args are handled (including removing callback support)
+  - ⚠️ Refactor how incoming method arguments are parsed. Type signatures for API methods should be _much_ more accurate and reliable now
+    - ⚠️ Remove support for providing callbacks to API methods. Use \`async / await\` instead
+    - ⚠️ Remove support for passing a plain API key as a function arg. If supplied on a per-request basis, it should be in the \`RequestOptions\` under the \`apiKey\` property
+    - ⚠️ Keys from \`params\` and \`options\` objects are no longer mixed. If present on a method, \`RequestParams\` must always come first and \`RequestOptions\` must always come second. To supply options without params, pass \`undefined\` as the first argument explicitly`;
+
+const line = (notes: string, text: string) => notes.split("\n").find((l) => l.includes(text))!;
+const fixture = (id: string) => cases.find((c) => c.id === id)!;
+
+test("a removal gets the addition on the same object beside it, which is its replacement", () => {
+  const removal = line(ALPHA4, "Remove support for `expires_after`");
+  assert.deepEqual(relatedLines(ALPHA4, removal), fixture("v22-7-alpha4-blik-mandate-expires-after-renamed").related);
+});
+
+test("an entry gets the entry that says how its replacement must be called", () => {
+  const apiKey = line(V22, "plain API key");
+  assert.deepEqual(relatedLines(V22, apiKey), fixture("v22-remove-api-key-as-string-arg").related);
+});
+
+test("a PR's summary of a field's removal finds the lines about the object it was on", () => {
+  // What regenerate has for a PR opened before bodies quoted related lines.
+  const related = relatedLines(ALPHA4, "v22.7.0-alpha.4: `Mandate.payment_method_details.blik.expires_after` removed.");
+  assert.equal(related.length, 2);
+  assert.match(related[0], /Add support for `expires_at`/);
+  assert.match(related[1], /Remove support for `expires_after`/);
+});
+
+test("entries sharing no name, or only a name that's everywhere, aren't related", () => {
+  assert.deepEqual(relatedLines(ALPHA4, line(ALPHA4, "`appeal`")), []);
+  const everywhere = Array.from({ length: 10 }, (_, i) => `* Add support for \`f${i}\` on \`PaymentIntent\``).join("\n");
+  assert.deepEqual(relatedLines(`${everywhere}\n* ⚠️ Remove support for \`x\` on \`PaymentIntent\``, "* ⚠️ Remove support for `x` on `PaymentIntent`"), []);
+  assert.deepEqual(relatedLines(ALPHA4, "no code names here"), []);
+});
+
+test("related lines are nearest first, at most six, each cut to 400 characters", () => {
+  const notes = Array.from({ length: 7 }, (_, i) => `* Add support for \`f${i}\` on \`Foo.bar\`${i === 1 ? " " + "x".repeat(500) : ""}`);
+  notes.splice(3, 0, "* ⚠️ Remove support for `old` on `Foo.bar`");
+  const related = relatedLines(notes.join("\n"), notes[3]);
+  assert.equal(related.length, 6);
+  assert.deepEqual(related.map((l) => l.match(/`(f\d+)`/)![1]), ["f2", "f3", "f1", "f4", "f0", "f5"]);
+  assert.ok(related.every((l) => l.length <= 400));
+  assert.ok(related[2].endsWith("…"));
 });

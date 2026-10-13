@@ -8,6 +8,7 @@ export interface PatchLogEntry {
   status: "pr_opened" | "pr_exists" | "no_change_needed" | "error";
   prUrl?: string;
   explanation?: string;
+  typeErrors?: string[]; // what the patch adds against the SDK's types; its PR says Needs review
   error?: string;
 }
 

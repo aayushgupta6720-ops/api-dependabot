@@ -3,10 +3,11 @@ import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs"
 import path from "node:path";
 import { Project, ts } from "ts-morph";
 
-// The SDK as published at each version a case comes from, unpacked once into
+// The SDK as published at a release, unpacked once into
 // .cache/sdk/<package>@<version>/node_modules/<package>. stripe-node ships its
 // own type declarations (since v8), so a patch can be type-checked against the
-// SDK it was written for, not just parsed.
+// SDK it was written for, not just parsed: by the eval, and before a fix PR
+// opens.
 const CACHE = path.resolve(".cache", "sdk");
 const NODE_TYPES = path.resolve("node_modules", "@types");
 
@@ -30,7 +31,7 @@ export function sdkRoot(pkg: string, version: string): string {
 }
 
 const COMPILER_OPTIONS: ts.CompilerOptions = {
-  strict: false, // the eval's files are plain JavaScript; only what the SDK's types rule out counts
+  strict: false, // patched files are often plain JavaScript; only what the SDK's types rule out counts
   noEmit: true,
   esModuleInterop: true,
   module: ts.ModuleKind.ESNext,
@@ -65,4 +66,19 @@ export function addedErrors(before: string[], after: string[]): string[] {
     left.splice(i, 1);
     return false;
   });
+}
+
+/** The type errors `after` has that `before` didn't, against `pkg` at
+ * `release` (a tag, with or without its v). Null when they can't be checked:
+ * that version ships no type declarations, or it couldn't be downloaded. */
+export function addedTypeErrors(pkg: string, release: string, before: string, after: string): string[] | null {
+  let root: string;
+  try {
+    root = sdkRoot(pkg, release.replace(/^v/, ""));
+  } catch {
+    return null;
+  }
+  const was = typeErrors(root, before, pkg);
+  const now = was && typeErrors(root, after, pkg);
+  return was && now ? addedErrors(was, now) : null;
 }

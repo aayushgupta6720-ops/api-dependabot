@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { generatePatch } from "../llmClient.js";
 import { patchProblem } from "../patchCheck.js";
 import { cases } from "./fixtures.js";
-import { addedErrors, sdkRoot, typeErrors } from "./sdkTypes.js";
+import { addedErrors, sdkRoot, typeErrors } from "../sdkTypes.js";
 
 interface CaseResult {
   id: string;
@@ -31,7 +31,8 @@ async function runCase(testCase: (typeof cases)[number], sample: number): Promis
   const { explanation, patchedCode } = await generatePatch(
     testCase.changelogEntry,
     `eval/${testCase.id}.js`,
-    testCase.beforeCode
+    testCase.beforeCode,
+    testCase.related
   );
 
   const found = (check: string | RegExp) =>

@@ -17,7 +17,7 @@ import { extractBreakingChanges, generatePatch } from "../llmClient.js";
 import { processReleases } from "../pipeline.js";
 import { apiVersionChange } from "../releaseNotes.js";
 import { findApiVersionPins, findFieldUsages, findUsages } from "../scanner.js";
-import { addedErrors, sdkRoot, typeErrors } from "./sdkTypes.js";
+import { addedErrors, sdkRoot, typeErrors } from "../sdkTypes.js";
 
 const HERE = path.join(path.dirname(fileURLToPath(import.meta.url)), "e2e");
 const REPO = path.join(HERE, "repo");

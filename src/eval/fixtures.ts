@@ -12,6 +12,9 @@ export interface EvalCase {
   // "didn't even try" and "left the old call in place" failures.
   mustContain: (string | RegExp)[];
   mustNotContain: (string | RegExp)[];
+  // The related lines the pipeline gives the patch: relatedLines over the
+  // release's notes (releaseNotes.test.ts checks it finds these).
+  related?: string[];
 }
 
 /**
@@ -50,8 +53,14 @@ async function getCustomer(id, apiKey) {
   return stripe.customers.retrieve(id, apiKey);
 }
 `,
-    mustContain: ["{ apiKey"], // covers both `{ apiKey }` shorthand and `{ apiKey: ... }`
-    mustNotContain: ["retrieve(id, apiKey)"],
+    related: [
+      "- ⚠️ Keys from `params` and `options` objects are no longer mixed. If present on a method, `RequestParams` must always come first and `RequestOptions` must always come second. To supply options without params, pass `undefined` as the first argument explicitly",
+    ],
+    // The options go third, after the params: `retrieve(id, { apiKey })`
+    // passes the key as a request parameter, which the type check caught
+    // every week until the patch saw the entry that says so.
+    mustContain: [/retrieve\(\s*id\s*,\s*(undefined|\{\s*\})\s*,\s*\{\s*apiKey/],
+    mustNotContain: ["retrieve(id, apiKey)", /retrieve\(\s*id\s*,\s*\{\s*apiKey/],
   },
   {
     id: "v22-remove-callback-support",
@@ -184,7 +193,33 @@ async function createCheckoutSession(items) {
   // Field changes. A removed field reads as undefined rather than throwing,
   // so the tempting "fix" is to hard-code the result, which hides the loss.
   {
-    id: "v22-7-alpha4-blik-mandate-expires-after-removed",
+    id: "v22-2-alpha6-invoice-item-credited-items-removed",
+    changelogEntry: "v22.2.0-alpha.6: `InvoiceItem.proration_details.credited_items` removed.",
+    fieldPath: "proration_details.credited_items",
+    beforeCode: `import Stripe from "stripe";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+// The invoice a proration credit was taken from, or null for a debit.
+async function creditedInvoice(invoiceItemId) {
+  const item = await stripe.invoiceItems.retrieve(invoiceItemId);
+  const credited = item.proration_details.credited_items;
+  return credited ? credited.invoice : null;
+}
+`,
+    // No replacement exists (its release adds nothing on
+    // InvoiceItem.proration_details): flagged for a person, with the read left
+    // in place, not faked. Faking took two forms before the prompt said so: the
+    // first real run's PR hard-coded `return null;`, and an eval run set the
+    // variable to null.
+    related: [],
+    mustContain: ["TODO(api-dependabot)", "22.2.0-alpha.6", /=\s*item\.proration_details\.credited_items/],
+    mustNotContain: [/credited\s*=\s*(null|undefined)\b/, /^\s*return null;\s*$/m],
+  },
+  {
+    // The notes add `expires_at` one line above removing `expires_after`, and
+    // both are "Date at which the mandate expires": a rename. Given only the
+    // removal, the first real PR (test-repo #7) flagged the read for review.
+    id: "v22-7-alpha4-blik-mandate-expires-after-renamed",
     changelogEntry:
       "v22.7.0-alpha.4: `Mandate.payment_method_details.blik.expires_after` removed.",
     fieldPath: "payment_method_details.blik.expires_after",
@@ -198,12 +233,11 @@ async function blikMandateExpiry(mandateId) {
   return expiresAfter ? new Date(expiresAfter * 1000) : null;
 }
 `,
-    // No replacement exists: flagged for a person, with the read left in
-    // place, not faked. Faking took two forms before the prompt said so: the
-    // first real run's PR hard-coded `return null;`, and an eval run set
-    // `const expiresAfter = null;`.
-    mustContain: ["TODO(api-dependabot)", "22.7.0-alpha.4", /=\s*mandate\.payment_method_details\.blik\.expires_after/],
-    mustNotContain: [/expiresAfter\s*=\s*(null|undefined)\b/, /^\s*return null;\s*$/m],
+    related: [
+      "* Add support for `expires_at` on `Mandate.payment_method_details.blik`, `PaymentIntent.next_action.swish_handle_redirect_or_display_qr_code.qr_code`, and `Subscription.payment_settings.payment_method_options.blik.mandate_options`",
+    ],
+    mustContain: [/=\s*mandate\.payment_method_details\.blik\.expires_at\b/, "new Date("],
+    mustNotContain: [/\.expires_after\b/, "TODO(api-dependabot)"],
   },
   {
     id: "v17-billing-alert-usage-threshold-read",

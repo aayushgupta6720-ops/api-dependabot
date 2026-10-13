@@ -92,13 +92,26 @@ version") for the newest release among those read, and each older pin in a
 itself behaves differently between versions, so the PR is titled "Needs
 review". In JavaScript an older pin keeps working, so it's left alone.
 
+The patch is asked for with the changelog entry and up to six other lines
+of the same release's notes that name the same things (a field's object, a
+method, a type). An entry alone isn't always enough: stripe-node's
+22.7.0-alpha.4 adds `expires_at` on `Mandate.payment_method_details.blik`
+one line above removing `expires_after` there, both "Date at which the
+mandate expires", so the removal is a rename; and v22.0.0's "pass the API key
+in `RequestOptions`" is followed by "`RequestOptions` must always come
+second", after the params. A name that appears in more than eight of a
+release's entries (`PaymentIntent` in v23.0.0) doesn't count. The PR quotes
+the lines its patch was given.
+
 Before a patch becomes a pull request it has to parse, as TypeScript or
-JavaScript (types aren't checked: the target repo's dependencies aren't
-installed where the agent runs), and it has to edit the file rather than
-replace it: it may change at most 60% of the file's lines, or 3 in a short
-file. Correct patches in the eval changed 0-43%. A rejected patch is
-recorded as an error, so its release stays unseen and the next run tries
-again.
+JavaScript, and it has to edit the file rather than replace it: it may
+change at most 60% of the file's lines, or 3 in a short file. Correct
+patches in the eval changed 0-43%. A rejected patch is recorded as an
+error, so its release stays unseen and the next run tries again. Then it's
+type-checked against the SDK at the change's release (downloaded once into
+`.cache/sdk/`, as the eval does). A patch that adds type errors still
+opens, titled "Needs review" with the errors listed: rejected, its release
+would stay unseen and get the same patch every day.
 
 On the very first run there's no "last seen" marker yet, so it only looks at
 the single most recent release — it won't replay the SDK's entire history.
@@ -148,21 +161,26 @@ to scan for and 22 breaking items with nothing to patch.
 
 The marker only moves once every change from those releases has been
 handled. If a patch or PR fails, the releases stay unseen and the next run
-retries them. Each fix goes on a branch keyed on its release, the entry of
-the notes that states it and the file
-(`api-dependabot/<version>-<hash of the entry>-<file>`), so a retry finds the
-PR an earlier run opened and skips that file, without a model call, even if
-the model named or worded the change differently this time. A PR that was
-closed counts too, so a fix someone rejected isn't reopened. Changes stated
-in the same entry ("Remove `foo` and `bar`") share that branch: the first
-to reach a file gets one patch for all of them, and the rest find its PR.
+retries them. Each fix goes on a branch keyed on the entry of the notes
+that states it and the file (`api-dependabot/<hash of the entry>-<file>`),
+so a retry finds the PR an earlier run opened and skips that file, without
+a model call, even if the model named or worded the change differently this
+time. A PR that was closed counts too, so a fix someone rejected isn't
+reopened. The key is the entry's text, not its release: stripe-node repeats
+a pre-release's entries word for word in the stable release (22.7.0-alpha.4
+and 23.0.0 both say "⚠️ Change type of
+`Charge.payment_method_details.card.mandate` from `string` to
+`expandable(Mandate)`"), so a change announced twice gets one PR. Changes
+stated in the same entry ("Remove `foo` and `bar`") share that branch: the
+first to reach a file gets one patch for all of them, and the rest find its
+PR.
 
 ## Model and free-tier quota
 
 The model is `gemini-3.5-flash-lite`, set by `MODEL` in `src/llmClient.ts`.
 The free tier allows it 500 requests/day per Google project. The bigger
 `gemini-3.5-flash` and `gemini-3.6-flash` work too, but get only 20
-requests/day each, and a single `npm run eval` uses 10.
+requests/day each, and a single `npm run eval` uses 14 (42 with `--samples 3`).
 
 `npm run dev` makes no Gemini calls when there are no new releases.
 Otherwise it makes one call per 12,000 characters of new release notes to
@@ -203,10 +221,14 @@ The first run with type checks (2026-10-11) scored 12/13. It caught a patch
 the substring checks had passed: for v22's "pass the API key in the
 RequestOptions object", the model wrote `customers.retrieve(id, { apiKey })`,
 which puts it in the params; v22 declares `retrieve(id, params?, options?)`,
-so it belongs third. It also showed two fixtures that were never
-type-correct, which the breaking-change error had hidden: a webhook call
-with one argument of three, and an alert missing its required `title` and
-`recurrence`. Both were fixed, so a correct patch now leaves no type errors.
+so it belongs third. It failed 3 samples of 3 every week until the patch was
+given the next line of the notes ("`RequestOptions` must always come
+second"); with it, the patch is `retrieve(id, undefined, { apiKey })`, and
+the case's checks now require that. The type checks also showed two
+fixtures that were never type-correct, which the breaking-change error had
+hidden: a webhook call with one argument of three, and an alert missing its
+required `title` and `recurrence`. Both were fixed, so a correct patch now
+leaves no type errors.
 
 ```bash
 npm run eval:e2e
@@ -251,12 +273,22 @@ break, no new type errors, in four model calls. The miss is the widened
 enum: the fix is in the app's own types (the maintainers changed their
 database schema), and the agent ignores new enum values by design.
 
-The bundled fixtures are 13 real breaking changes pulled straight from
+The bundled fixtures are 14 real breaking changes pulled straight from
 [stripe-node's own CHANGELOG](https://github.com/stripe/stripe-node/blob/master/CHANGELOG.md)
 (v6.21.0 through v22.7.0-alpha.4), each citing the release it shipped in:
-10 method changes, a renamed field, a field made optional, and a field
-removed with no replacement. If you point `TARGET_PACKAGE_REPO` at a
-different SDK, swap these out for that SDK's own history the same way.
+10 method changes, two renamed fields (one stated as a removal, with its
+replacement in the line above), a field made optional, and a field removed
+with no replacement. A case carries the related lines the pipeline would
+give its patch, and a test checks `relatedLines` finds them in the real
+notes. If you point `TARGET_PACKAGE_REPO` at a different SDK, swap these
+out for that SDK's own history the same way.
+
+The blik case used to be the "removed with no replacement" one, and the
+agent's first real PR (test-repo #7) flagged that read for review. That was
+wrong: the line above adds `expires_at` for the same date. The case now
+requires the switch to `expires_at`, and the no-replacement case is
+22.2.0-alpha.6's `InvoiceItem.proration_details.credited_items`, whose
+release adds nothing on that object.
 
 What a patch does depends on the change. With a replacement (a rename, or
 another way to do the same thing), the code switches to it. A field made
@@ -280,7 +312,8 @@ A run never revisits a file that already has a fix PR, so a PR opened
 before a prompt change keeps its old patch. `regenerate` redoes one: it
 reads the changelog entry quoted in the PR's body and the file as it is at
 the PR's base commit, asks for a new patch, commits it to the PR's branch,
-and updates the title and body. It only touches open PRs that
+and updates the title and body. It uses the related lines the body quotes,
+or, for a PR opened before bodies did, finds them in its release's notes. It only touches open PRs that
 api-dependabot opened and that change one file, and pushes nothing if the
 new patch changes nothing or matches what the PR already has.
 
@@ -367,10 +400,12 @@ npm test
 
 Runs offline with Node's built-in test runner (no API keys or network): the
 retry logic in `src/pipeline.ts` (what gets marked seen, what a retry
-skips, branches keyed on the notes' entries), how release notes are split,
-numbered and read (including the follow-up for unanswered entries), the
-scanner's client and resource resolution, the pre-PR patch check, the
-eval's type check (against a small fake SDK), the dashboard's escaping and
+skips, branches keyed on the notes' entries, Needs review for a patch that
+adds type errors), how release notes are split, numbered and read
+(including the follow-up for unanswered entries), which lines are related
+to an entry (on excerpts of stripe-node's real notes), the scanner's client
+and resource resolution, the pre-PR patch check, the type check (against a
+small fake SDK), regenerate, the dashboard's escaping and
 error handling, its static copy, and how the Gemini key is sent.
 
 ## What's stubbed vs. real
@@ -378,7 +413,7 @@ error handling, its static copy, and how the Gemini key is sent.
 | Piece | Status |
 |---|---|
 | Usage scanner (AST-based) | Working — resolves call sites back to a client built from the tracked package (across modules, classes, aliases and destructuring), finds reads of changed fields, and groups both per file |
-| Pre-PR patch check | Working — a patch must parse and edit the file rather than replace it |
+| Pre-PR patch check | Working — a patch must parse and edit the file rather than replace it; one that adds type errors against the SDK's release opens as Needs review |
 | LLM patch generation (Gemini) | Working |
 | GitHub PR creation | Working |
 | Changelog watcher | Working — polls GitHub Releases, extracts breaking changes via Gemini |

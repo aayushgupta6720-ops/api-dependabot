@@ -223,6 +223,58 @@ export function numberNotes(pieces: string[]): { numbered: string[]; items: Note
   return { numbered, items };
 }
 
+// How many related lines a patch gets, and how long each may be.
+const MAX_RELATED = 6;
+const MAX_RELATED_CHARS = 400;
+// A name in more of a release's entries than this says nothing about which
+// ones belong together (v23.0.0 names `PaymentIntent` all over).
+const MAX_NAME_ENTRIES = 8;
+
+/** The code names an entry mentions in backticks, plus the object a field
+ * path is on: `Mandate.payment_method_details.blik.expires_after` also names
+ * `Mandate.payment_method_details.blik`. */
+function codeNames(text: string): Set<string> {
+  const names = new Set<string>();
+  for (const [, name] of text.matchAll(/`([^`\n]+)`/g)) {
+    names.add(name);
+    const parts = name.split(".");
+    if (parts.length >= 4) names.add(parts.slice(0, -1).join("."));
+  }
+  return names;
+}
+
+/**
+ * Entries of a release's notes that mention a code name the change's own
+ * entry does, nearest first: what a patch needs that one entry doesn't say.
+ * stripe-node's v22.7.0-alpha.4 adds `expires_at` on
+ * `Mandate.payment_method_details.blik` one line above removing
+ * `expires_after` there, so the removal is a rename; and v22.0.0's "plain API
+ * key" entry says to use `RequestOptions`, while the entry after it says
+ * those now always come after the params. `stated` is the change's entry as
+ * the notes have it, or as a PR quotes it; each line comes back trimmed and
+ * cut to MAX_RELATED_CHARS.
+ */
+export function relatedLines(notes: string, stated: string): string[] {
+  const entries = numberNotes([notes]).items[0].filter((item) => !/^#/.test(item.text));
+  const names = codeNames(stated);
+  if (names.size === 0) return [];
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const name of codeNames(entry.text)) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const telling = [...names].filter((name) => (counts.get(name) ?? 0) <= MAX_NAME_ENTRIES);
+  const own = entries.filter((e) => stated.includes(e.text.trim()));
+  const at = own.length ? own[0].first : 0;
+  return entries
+    .filter((e) => !own.includes(e) && [...codeNames(e.text)].some((name) => telling.includes(name)))
+    .sort((a, b) => Math.abs(a.first - at) - Math.abs(b.first - at) || a.first - b.first)
+    .slice(0, MAX_RELATED)
+    .map((e) => {
+      const line = e.text.replace(/\s+/g, " ").trim();
+      return line.length > MAX_RELATED_CHARS ? `${line.slice(0, MAX_RELATED_CHARS - 1)}…` : line;
+    });
+}
+
 // How stripe-node's notes announce a new pinned API version, from v10.0.0 on:
 // 'moving to use the new API version "2022-11-15"' (v10, v11), 'In this
 // release, Stripe API Version `2022-11-15` ... will be sent by default' (v12),

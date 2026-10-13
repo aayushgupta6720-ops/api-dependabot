@@ -17,14 +17,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FixPr } from "./githubClient.js";
 import type { PatchResult } from "./llmClient.js";
-import { entryFromPrBody, fixPrBody, fixPrTitle, matchFileEnding } from "./pipeline.js";
+import { entryFromPrBody, fixPrBody, fixPrTitle, matchFileEnding, relatedFromPrBody } from "./pipeline.js";
+import { relatedLines } from "./releaseNotes.js";
 
 /** GitHub and model calls, passed in so tests can fake them. */
 export interface RegenerateDeps {
   getFixPr(number: number): Promise<FixPr>;
   readRepoFile(filePath: string, ref: string): Promise<{ content: string; sha: string }>;
-  generatePatch(changelogEntry: string, affectedFilePath: string, affectedCode: string): Promise<PatchResult>;
+  generatePatch(changelogEntry: string, affectedFilePath: string, affectedCode: string, related?: string[]): Promise<PatchResult>;
   updateFixPr(pr: FixPr, filePath: string, content: string, title: string, body: string): Promise<void>;
+  // The notes of the release a tag names, for a PR opened before its body
+  // quoted related lines; null if there's no such release.
+  releaseNotes?(version: string): Promise<string | null>;
 }
 
 export type RegenerateResult =
@@ -45,10 +49,18 @@ export async function regenerateFixPr(
   const entry = entryFromPrBody(pr.body);
   if (!entry) throw new Error(`PR #${number}'s body doesn't quote the changelog entry it answers.`);
 
+  // A PR opened before bodies quoted related lines gets them from its release's notes.
+  let related = relatedFromPrBody(pr.body) ?? [];
+  const version = entry.match(/^(v?\d[^:\s]*):/)?.[1];
+  if (related.length === 0 && version && deps.releaseNotes) {
+    const notes = await deps.releaseNotes(version);
+    if (notes) related = relatedLines(notes, entry);
+  }
+
   const [filePath] = pr.files;
   const original = (await deps.readRepoFile(filePath, pr.baseSha)).content;
   const current = (await deps.readRepoFile(filePath, pr.headRef)).content;
-  const patch = await deps.generatePatch(entry, filePath, original);
+  const patch = await deps.generatePatch(entry, filePath, original, related);
   const patched = matchFileEnding(patch.patchedCode, original);
 
   if (patched === original) {
@@ -61,7 +73,7 @@ export async function regenerateFixPr(
   // "Fix breaking change: <target>" or "Needs review: <target>"
   const target = pr.title.includes(": ") ? pr.title.slice(pr.title.indexOf(": ") + 2) : pr.title;
   const title = fixPrTitle(target, patched, original);
-  const body = `${fixPrBody(patch.explanation, entry)}\n\nRegenerated with \`npm run regenerate\`.`;
+  const body = `${fixPrBody(patch.explanation, entry, related)}\n\nRegenerated with \`npm run regenerate\`.`;
   if (!opts.dryRun) await deps.updateFixPr(pr, filePath, patched, title, body);
   return {
     status: opts.dryRun ? "would_update" : "updated",
@@ -102,9 +114,14 @@ async function main() {
   // the tests import this module without any.
   const { getFixPr, readRepoFile, updateFixPr } = await import("./githubClient.js");
   const { generatePatch } = await import("./llmClient.js");
+  const { fetchReleaseNotes } = await import("./changelogWatcher.js");
 
   const dryRun = args.includes("--dry-run");
-  const result = await regenerateFixPr(number, { getFixPr, readRepoFile, generatePatch, updateFixPr }, { dryRun });
+  const result = await regenerateFixPr(
+    number,
+    { getFixPr, readRepoFile, generatePatch, updateFixPr, releaseNotes: fetchReleaseNotes },
+    { dryRun }
+  );
 
   if (result.status === "unchanged") {
     console.log(`${result.url}: left as it is. ${result.reason}`);

@@ -51,6 +51,27 @@ export async function fetchRepoFile(repoFullName: string, ref: string, filePath:
   return data as unknown as string;
 }
 
+/** The notes of the config.targetPackageRepo release tagged `tag` (with or
+ * without its v), from the changelog if its body only points there; null if
+ * there's no such release. */
+export async function fetchReleaseNotes(tag: string): Promise<string | null> {
+  for (const candidate of [tag, tag.startsWith("v") ? tag.slice(1) : `v${tag}`]) {
+    try {
+      const { data } = await octokit.repos.getReleaseByTag({ owner, repo, tag: candidate });
+      if (!data.body) return null;
+      const { releases } = await resolveReleaseNotes(
+        [{ version: data.tag_name, notes: data.body }],
+        config.targetPackageRepo,
+        fetchRepoFile
+      );
+      return releases[0].notes;
+    } catch (err) {
+      if ((err as { status?: number }).status !== 404) throw err;
+    }
+  }
+  return null;
+}
+
 /**
  * Fetches GitHub releases for config.targetPackageRepo published since the
  * last run, and asks the LLM to pull structured breaking changes out of

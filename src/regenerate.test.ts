@@ -21,12 +21,17 @@ function fakes(pr: Partial<FixPr> = {}, newPatch = `${FLAGGED}\n\n`) {
     files: ["mandates.js"],
     ...pr,
   };
-  const calls = { patchedFrom: [] as string[], updates: [] as { content: string; title: string; body: string }[] };
+  const calls = {
+    patchedFrom: [] as string[],
+    related: [] as string[][],
+    updates: [] as { content: string; title: string; body: string }[],
+  };
   const deps: RegenerateDeps = {
     getFixPr: async () => fullPr,
     readRepoFile: async (_file, ref) => ({ content: ref === fullPr.baseSha ? BASE : OLD_PATCH, sha: "blob" }),
-    generatePatch: async (entry, _file, code) => {
+    generatePatch: async (entry, _file, code, related = []) => {
       calls.patchedFrom.push(`${entry} | ${code}`);
+      calls.related.push(related);
       return { explanation: "Only added a TODO for review.", patchedCode: newPatch };
     },
     updateFixPr: async (_pr, _file, content, title, body) => void calls.updates.push({ content, title, body }),
@@ -75,4 +80,27 @@ test("only open, single-file api-dependabot PRs that quote their entry are regen
     await assert.rejects(regenerateFixPr(7, deps), message);
     assert.deepEqual(calls.patchedFrom, []); // refused before spending a model call
   }
+});
+
+test("a PR opened before bodies quoted related lines gets them from its release's notes", async () => {
+  const { deps, calls } = fakes();
+  const asked: string[] = [];
+  deps.releaseNotes = async (version) => {
+    asked.push(version);
+    return "* Add support for `expires_at` on `Mandate.payment_method_details.blik`\n* ⚠️ Remove support for `expires_after` on `Mandate.payment_method_details.blik`\n* Add support for `momo` on `PaymentRecord`";
+  };
+  await regenerateFixPr(7, deps);
+  assert.deepEqual(asked, ["v22.7.0-alpha.4"]);
+  assert.deepEqual(calls.related, [[
+    "* Add support for `expires_at` on `Mandate.payment_method_details.blik`",
+    "* ⚠️ Remove support for `expires_after` on `Mandate.payment_method_details.blik`",
+  ]]);
+  assert.match(calls.updates[0].body, /Related lines in the same release notes:\n> \* Add support for `expires_at`/);
+});
+
+test("related lines the PR body already quotes are used as they are", async () => {
+  const { deps, calls } = fakes({ body: fixPrBody("Flagged it.", ENTRY, ["quoted line"]) });
+  deps.releaseNotes = async () => assert.fail("the body has the lines");
+  await regenerateFixPr(7, deps);
+  assert.deepEqual(calls.related, [["quoted line"]]);
 });

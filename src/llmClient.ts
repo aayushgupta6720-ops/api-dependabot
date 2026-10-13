@@ -1,6 +1,6 @@
 import { changeTarget, REVIEW_MARKER, type DetectedChange } from "./changes.js";
 import { config } from "./config.js";
-import { numberNotes, splitNotes, type NotesItem } from "./releaseNotes.js";
+import { numberNotes, relatedLines, splitNotes, type NotesItem } from "./releaseNotes.js";
 
 export type { DetectedChange } from "./changes.js";
 
@@ -127,6 +127,13 @@ export async function extractBreakingChanges(
     result.problems.push(...reply.problems);
   }
   result.changes = mergeSameTarget(result.changes);
+  // From the release's whole notes, since a long release is read in pieces.
+  const notesOf = new Map(releases.map((r) => [r.version, r.notes]));
+  for (const change of result.changes) {
+    const notes = notesOf.get(change.version);
+    const related = notes && change.source ? relatedLines(notes, change.source) : [];
+    if (related.length) change.related = related;
+  }
   return result;
 }
 
@@ -216,7 +223,7 @@ Return ONLY a JSON object, no markdown fences, no extra text:
 {"changes": [...], "notPatched": [...]}
 Each element of "changes" is one of these two shapes, with "version" the release tag as written in its heading, without any "(part ...)", and "line" the number of the line in the notes that states the change:
 {"version": "the release tag, e.g. v10.0.0", "line": 12, "entry": "one-line summary, e.g. 'v10.0.0: Renamed \`listUpcomingLineItems\` method on the \`Invoice\` resource to \`listUpcomingLines\`.'", "kind": "method", "methodName": "the dotted call path callers would use, e.g. invoices.listUpcomingLineItems"}
-{"version": "the release tag", "line": 12, "entry": "one-line summary, e.g. 'v22.7.0-alpha.4: \`Mandate.payment_method_details.blik.expires_after\` removed.'", "kind": "field", "fieldPath": "the path callers read off the returned object, without the resource name, e.g. payment_method_details.blik.expires_after; write array elements as [], e.g. classifications[].credit for \`FinancialConnections.Transaction.classifications[]\` credit", "resource": "the dotted client path whose methods return that object, e.g. mandates for Mandate, issuing.cards for Issuing.Card, financialConnections.transactions for FinancialConnections.Transaction; empty if the notes don't name one object"}
+{"version": "the release tag", "line": 12, "entry": "one-line summary, e.g. 'v22.2.0-alpha.6: \`Subscription.status_details\` removed.'", "kind": "field", "fieldPath": "the path callers read off the returned object, without the resource name, e.g. status_details or payment_method_details.card.three_d_secure.cryptogram; write array elements as [], e.g. classifications[].credit for \`FinancialConnections.Transaction.classifications[]\` credit", "resource": "the dotted client path whose methods return that object, e.g. mandates for Mandate, issuing.cards for Issuing.Card, financialConnections.transactions for FinancialConnections.Transaction; empty if the notes don't name one object"}
 Each element of "notPatched" is {"version": "the release tag", "line": the number of the line that states it, "entry": "one-line summary, then why there's nothing to patch"}.
 If these notes have no breaking changes, return {"changes": [], "notPatched": []}.`;
 
@@ -339,26 +346,37 @@ function toDetectedChange(item: unknown): DetectedChange | null {
  * the model hard-coded `return null;` over a removed field's read, which hid
  * that the code had lost the data. A removed method is different: calling it
  * throws anyway, so the call becomes an explicit throw rather than staying.
+ *
+ * `related` are other lines of the release's notes that name the same things
+ * (see relatedLines). Given only its entry, the patch for v22.7.0-alpha.4's
+ * `expires_after` removal flagged the read for review, though the line above
+ * it adds `expires_at` for the same date; and the v22.0.0 API-key patch put
+ * `{ apiKey }` where the params go, which the next entry says no longer works.
  */
 export async function generatePatch(
   changelogEntry: string,
   affectedFilePath: string,
-  affectedCode: string
+  affectedCode: string,
+  related: string[] = []
 ): Promise<PatchResult> {
+  const context = related.length
+    ? `\nRELATED LINES FROM THE SAME RELEASE NOTES (they name the same things; read them for a replacement the entry doesn't name, or for how calls must now be made):\n${related.map((l) => `- ${l}`).join("\n")}\n`
+    : "";
   const prompt = `You are updating code for a breaking change in an SDK it uses.
 
 CHANGELOG ENTRY (what changed in the new SDK version):
 ${changelogEntry}
-
+${context}
 FILE: ${affectedFilePath}
 CURRENT CODE:
 ${affectedCode}
 
 How to update it:
-- If the change names a replacement (a renamed method, field or parameter, or another way to do the same thing), switch the code to it and keep its behavior.
+- If the change names a replacement (a renamed method, field or parameter, or another way to do the same thing), switch the code to it and keep its behavior. A related line that adds something on the same object to do the same job (a field added where a similarly named one was removed) names one too.
+- Follow what the related lines say about how calls must now be made (which argument goes where).
 - If a field just became optional or nullable, guard each read of it (optional chaining or a null check) and keep the behavior the same when it's present.
-- If a method was removed with no replacement, don't invent one. Calling it now throws an obscure "is not a function" error, so replace the call with a throw of an Error whose message says what was removed and in which version, and put a comment directly above it that starts with "${REVIEW_MARKER}:".
-- If a field was removed with no replacement, don't swap its read for a hard-coded value (such as setting it to null or returning null): the read still runs (it gives undefined), and faking the value hides that the data is gone. Leave the code as it is and add a comment directly above the affected line that starts with "${REVIEW_MARKER}:", names what was removed and in which version, and says what this code can no longer do.
+- If a method was removed with no replacement (none in the entry or the related lines), don't invent one. Calling it now throws an obscure "is not a function" error, so replace the call with a throw of an Error whose message says what was removed and in which version, and put a comment directly above it that starts with "${REVIEW_MARKER}:".
+- If a field was removed with no replacement (none in the entry or the related lines), don't swap its read for a hard-coded value (such as setting it to null or returning null): the read still runs (it gives undefined), and faking the value hides that the data is gone. Leave the code as it is and add a comment directly above the affected line that starts with "${REVIEW_MARKER}:", names what was removed and in which version, and says what this code can no longer do.
 - Either way, a person will decide what to do about it.
 - Change only what this breaking change requires, and leave the rest of the file exactly as it is.
 

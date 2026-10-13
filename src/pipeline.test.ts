@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DetectedChange } from "./changes.js";
-import { entryFromPrBody, fixBranchName, fixPrBody, matchFileEnding, processReleases, type PipelineDeps } from "./pipeline.js";
+import { entryFromPrBody, fixBranchName, fixPrBody, fixScopes, matchFileEnding, processReleases, relatedFromPrBody, type PipelineDeps } from "./pipeline.js";
 
 const change: DetectedChange = {
   version: "v18.0.0",
@@ -15,7 +15,12 @@ const opts = { repoPath: "/repo", targetPackage: "stripe" };
 function fakes(failFirstPrFor: string[] = []) {
   const prs = new Map<string, string>();
   const failing = new Set(failFirstPrFor);
-  const calls = { generatePatch: [] as string[], markedSeen: [] as string[], scanned: [] as string[] };
+  const calls = {
+    generatePatch: [] as string[],
+    markedSeen: [] as string[],
+    scanned: [] as string[],
+    opened: [] as { title: string; body: string }[],
+  };
   const deps: PipelineDeps = {
     findUsages: (_repo, _pkg, methodName) => {
       calls.scanned.push(`calls to ${methodName}`);
@@ -35,8 +40,9 @@ function fakes(failFirstPrFor: string[] = []) {
       return { explanation: "fixed", patchedCode: code.replace("old", "new") };
     },
     findFixPr: async (branch) => prs.get(branch) ?? null,
-    openFixPr: async (branch, file) => {
+    openFixPr: async (branch, file, _content, title, body) => {
       if (failing.delete(file)) throw new Error("GitHub 502");
+      calls.opened.push({ title, body });
       const url = `https://github.com/me/repo/pull/${prs.size + 1}`;
       prs.set(branch, url);
       return url;
@@ -104,8 +110,16 @@ test("a fix branch is keyed on the changelog item, so a renamed change finds its
   assert.equal(fixBranchName(renamed, "a.js"), fixBranchName(sourced, "a.js"));
   assert.equal(fixBranchName({ ...sourced, source: `  ${item.replace(" ", "\n ")}  ` }, "a.js"), fixBranchName(sourced, "a.js"));
   assert.notEqual(fixBranchName({ ...sourced, source: "* ⚠️ Remove `refunds.create`" }, "a.js"), fixBranchName(sourced, "a.js"));
-  assert.notEqual(fixBranchName({ ...sourced, version: "v19.0.0" }, "a.js"), fixBranchName(sourced, "a.js"));
-  assert.match(fixBranchName(sourced, "src/a.js"), /^api-dependabot\/v18\.0\.0-[0-9a-f]{12}-src-a\.js$/);
+  assert.match(fixBranchName(sourced, "src/a.js"), /^api-dependabot\/[0-9a-f]{12}-src-a\.js$/);
+});
+
+test("an item a later release repeats word for word finds the PR the earlier release got, open or closed", () => {
+  // stripe-node's 22.7.0-alpha.4 and 23.0.0 both say this.
+  const item = "* ⚠️ Change type of `Charge.payment_method_details.card.mandate` from `string` to `expandable(Mandate)`";
+  const preview = { version: "v22.7.0-alpha.4", entry: "x", fieldPath: "payment_method_details.card.mandate", source: item };
+  assert.equal(fixBranchName({ ...preview, version: "v23.0.0" }, "a.js"), fixBranchName(preview, "a.js"));
+  // Without an item, the release still tells changes to one method apart.
+  assert.notEqual(fixBranchName({ ...change, version: "v19.0.0" }, "a.js"), fixBranchName(change, "a.js"));
 });
 
 test("changes from one changelog item share one PR per file, which answers all of them", async () => {
@@ -235,5 +249,49 @@ test("a new pinned API version is patched without the model, and flagged for rev
   assert.equal(result.changes[0].patches[0].status, "pr_opened");
   assert.equal(opened[0].title, "Needs review: apiVersion");
   assert.match(opened[0].content, /\n {2}\/\/ TODO\(api-dependabot\): v11\.0\.0 pins API version 2022-11-15 \(was 2020-08-27\)\.[^\n]*\n {2}apiVersion: "2022-11-15",\n/);
-  assert.match(opened[0].branch, /^api-dependabot\/v11\.0\.0-[0-9a-f]{12}-utils-stripe\.ts$/);
+  assert.match(opened[0].branch, /^api-dependabot\/[0-9a-f]{12}-utils-stripe\.ts$/);
+});
+
+test("a PR body quotes the related lines its patch was given, and they can be read back", () => {
+  const related = ["* Add support for `expires_at` on `Mandate.payment_method_details.blik`"];
+  const body = fixPrBody("Switched to expires_at.", "v1: `a.b.c.old` removed.", related);
+  assert.equal(entryFromPrBody(body), "v1: `a.b.c.old` removed.");
+  assert.deepEqual(relatedFromPrBody(body), related);
+  assert.equal(relatedFromPrBody(fixPrBody("x", "v1: y")), null);
+});
+
+test("changes stated by one item share its related lines, once each", () => {
+  const scopes = fixScopes([
+    { version: "v1", entry: "v1: a removed.", fieldPath: "a", source: "* Remove `a` and `b`", related: ["r1", "r2"] },
+    { version: "v1", entry: "v1: b removed.", fieldPath: "b", source: "* Remove `a` and `b`", related: ["r2", "r3"] },
+    { version: "v1", entry: "v1: c removed.", fieldPath: "c", related: ["r4"] },
+  ]);
+  assert.deepEqual(scopes[0].related, ["r1", "r2", "r3"]);
+  assert.equal(scopes[1], scopes[0]);
+  assert.deepEqual(scopes[2].related, ["r4"]);
+});
+
+test("a patch that adds type errors still opens, as Needs review with the errors listed", async () => {
+  const { deps, calls } = fakes();
+  const checked: string[] = [];
+  deps.typeCheck = (release, before, after) => {
+    checked.push(release);
+    return after === before ? [] : ["TS2353: Object literal may only specify known properties"];
+  };
+  const result = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
+  assert.deepEqual(checked, ["v18.0.0", "v18.0.0"]); // one per affected file
+  const opened = calls.opened[0];
+  assert.match(opened.title, /^Needs review: charges\.create$/);
+  assert.match(opened.body, /adds type errors against stripe v18\.0\.0, so a person needs to finish it:\n- TS2353/);
+  assert.deepEqual(result.changes[0].patches[0].typeErrors, ["TS2353: Object literal may only specify known properties"]);
+});
+
+test("a patch that type-checks, or can't be checked, opens as a fix", async () => {
+  for (const verdict of [[], null]) {
+    const { deps, calls } = fakes();
+    deps.typeCheck = () => verdict;
+    const result = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
+    assert.match(calls.opened[0].title, /^Fix breaking change: /);
+    assert.equal(result.changes[0].patches[0].typeErrors, undefined);
+  }
 });

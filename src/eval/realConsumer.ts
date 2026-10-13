@@ -22,7 +22,7 @@ import { extractBreakingChanges, generatePatch } from "../llmClient.js";
 import { processReleases } from "../pipeline.js";
 import { apiVersionChange, resolveReleaseNotes, type Release } from "../releaseNotes.js";
 import { findApiVersionPins, findFieldUsages, findUsages } from "../scanner.js";
-import { addedErrors, sdkRoot } from "./sdkTypes.js";
+import { addedErrors, sdkRoot } from "../sdkTypes.js";
 
 const REPO = "vercel/nextjs-subscription-payments";
 const COMMIT = "9628c7b937a7f4774e13fa0203aba576f27cdbf1"; // the parent of the upgrade, 0f2204bf5
