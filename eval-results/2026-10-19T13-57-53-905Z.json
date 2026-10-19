@@ -1,0 +1,422 @@
+[
+  {
+    "id": "v22-constructor-requires-new",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Updated the Stripe client initialization to use the `new` keyword as required by version 22.0.0 of the SDK.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nconst stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getBalance() {\n  return stripeClient.balance.retrieve();\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-constructor-requires-new",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Added the 'new' keyword to the Stripe constructor call as required by version 22.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nconst stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getBalance() {\n  return stripeClient.balance.retrieve();\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-constructor-requires-new",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Added the 'new' keyword to the Stripe constructor call as required by version 22.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nconst stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getBalance() {\n  return stripeClient.balance.retrieve();\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-remove-api-key-as-string-arg",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Updated stripe.customers.retrieve to pass the apiKey via the RequestOptions object instead of as a plain string argument.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCustomer(id, apiKey) {\n  return stripe.customers.retrieve(id, undefined, { apiKey });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-remove-api-key-as-string-arg",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Updated stripe.customers.retrieve to pass the apiKey inside the RequestOptions object instead of as a plain string argument.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCustomer(id, apiKey) {\n  return stripe.customers.retrieve(id, undefined, { apiKey });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-remove-api-key-as-string-arg",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Updated stripe.customers.retrieve to pass the apiKey via the RequestOptions object instead of as a plain string argument.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCustomer(id, apiKey) {\n  return stripe.customers.retrieve(id, undefined, { apiKey });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-remove-callback-support",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Updated listCustomers to be an async function using await instead of the removed callback pattern.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function listCustomers(onDone) {\n  const customers = await stripe.customers.list();\n  onDone(customers);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-remove-callback-support",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Updated listCustomers to be async and use await for stripe.customers.list since callback support was removed in v22.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function listCustomers(onDone) {\n  const customers = await stripe.customers.list();\n  onDone(customers);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-remove-callback-support",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Updated listCustomers to be an async function and used await with stripe.customers.list() to replace the removed callback support.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function listCustomers(onDone) {\n  const customers = await stripe.customers.list();\n  onDone(customers);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.0.0",
+    "retried": false
+  },
+  {
+    "id": "v19-parse-thin-event-renamed",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Renamed StripeClient.parseThinEvent to StripeClient.parseEventNotification as specified in the v19.0.0 SDK changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nfunction handleWebhook(payload, signature, secret) {\n  return stripe.parseEventNotification(payload, signature, secret);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 19.0.0",
+    "retried": false
+  },
+  {
+    "id": "v19-parse-thin-event-renamed",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Renamed StripeClient.parseThinEvent to StripeClient.parseEventNotification as specified in the v19.0.0 SDK changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nfunction handleWebhook(payload, signature, secret) {\n  return stripe.parseEventNotification(payload, signature, secret);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 19.0.0",
+    "retried": false
+  },
+  {
+    "id": "v19-parse-thin-event-renamed",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Renamed StripeClient.parseThinEvent to StripeClient.parseEventNotification as specified in the v19.0.0 SDK changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nfunction handleWebhook(payload, signature, secret) {\n  return stripe.parseEventNotification(payload, signature, secret);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 19.0.0",
+    "retried": false
+  },
+  {
+    "id": "v18-webhooks-factory-to-property",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Updated Stripe.webhooks() to Stripe.webhooks as it is now a plain object rather than a factory function in v18.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nfunction verifyWebhook(payload, sig, secret) {\n  return Stripe.webhooks.constructEvent(payload, sig, secret);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 18.0.0",
+    "retried": false
+  },
+  {
+    "id": "v18-webhooks-factory-to-property",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Updated Stripe.webhooks() to Stripe.webhooks as it is now a plain object rather than a factory function.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nfunction verifyWebhook(payload, sig, secret) {\n  return Stripe.webhooks.constructEvent(payload, sig, secret);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 18.0.0",
+    "retried": false
+  },
+  {
+    "id": "v18-webhooks-factory-to-property",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Updated Stripe.webhooks() to Stripe.webhooks as it is now a plain object rather than a factory function.",
+    "patchedCode": "import Stripe from \"stripe\";\n\nfunction verifyWebhook(payload, sig, secret) {\n  return Stripe.webhooks.constructEvent(payload, sig, secret);\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 18.0.0",
+    "retried": false
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on the billing alert creation parameters as required by SDK version 17.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createAlert(meterId) {\n  return stripe.billing.alerts.create({\n    alert_type: \"usage_threshold\",\n    title: \"Usage over 1,000\",\n    usage_threshold: { gte: 1000, meter: meterId, recurrence: \"one_time\" },\n  });\n}",
+    "failures": [],
+    "typeChecked": "stripe 17.0.0",
+    "retried": false
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on the billing alert creation parameters per the v17.0.0 SDK breaking change.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createAlert(meterId) {\n  return stripe.billing.alerts.create({\n    alert_type: \"usage_threshold\",\n    title: \"Usage over 1,000\",\n    usage_threshold: { gte: 1000, meter: meterId, recurrence: \"one_time\" },\n  });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 17.0.0",
+    "retried": false
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on Billing.AlertCreateParams to match the v17.0.0 SDK breaking change.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createAlert(meterId) {\n  return stripe.billing.alerts.create({\n    alert_type: \"usage_threshold\",\n    title: \"Usage over 1,000\",\n    usage_threshold: { gte: 1000, meter: meterId, recurrence: \"one_time\" },\n  });\n}",
+    "failures": [],
+    "typeChecked": "stripe 17.0.0",
+    "retried": false
+  },
+  {
+    "id": "v16-issuing-volume-to-quantity-decimal",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Renamed `volume_decimal` to `quantity_decimal` on the Issuing fuel purchase details object.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function captureAuthorization(id) {\n  return stripe.testHelpers.issuing.authorizations.capture(id, {\n    purchase_details: { fuel: { quantity_decimal: \"10.5\" } },\n  });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 16.0.0",
+    "retried": false
+  },
+  {
+    "id": "v16-issuing-volume-to-quantity-decimal",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Renamed `volume_decimal` to `quantity_decimal` in the fuel purchase details to align with the v16.0.0 SDK breaking change.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function captureAuthorization(id) {\n  return stripe.testHelpers.issuing.authorizations.capture(id, {\n    purchase_details: { fuel: { quantity_decimal: \"10.5\" } },\n  });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 16.0.0",
+    "retried": false
+  },
+  {
+    "id": "v16-issuing-volume-to-quantity-decimal",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Renamed volume_decimal to quantity_decimal on the Issuing fuel purchase details parameter.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function captureAuthorization(id) {\n  return stripe.testHelpers.issuing.authorizations.capture(id, {\n    purchase_details: { fuel: { quantity_decimal: \"10.5\" } },\n  });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 16.0.0",
+    "retried": false
+  },
+  {
+    "id": "v10-invoice-list-upcoming-lines-renamed",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Renamed the `listUpcomingLineItems` method to `listUpcomingLines` on the `Invoice` resource as specified in the v10.0.0 changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function upcomingLines(customerId) {\n  return stripe.invoices.listUpcomingLines({ customer: customerId });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 10.0.0",
+    "retried": false
+  },
+  {
+    "id": "v10-invoice-list-upcoming-lines-renamed",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Renamed the `listUpcomingLineItems` method on the `Invoice` resource to `listUpcomingLines` as specified in the v10.0.0 changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function upcomingLines(customerId) {\n  return stripe.invoices.listUpcomingLines({ customer: customerId });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 10.0.0",
+    "retried": false
+  },
+  {
+    "id": "v10-invoice-list-upcoming-lines-renamed",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Renamed the `listUpcomingLineItems` method call on `stripe.invoices` to `listUpcomingLines` as specified in the v10.0.0 changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function upcomingLines(customerId) {\n  return stripe.invoices.listUpcomingLines({ customer: customerId });\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 10.0.0",
+    "retried": false
+  },
+  {
+    "id": "v10-issuing-card-retrieve-details-removed",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Replaced the removed retrieveDetails method with a TODO comment and a thrown Error indicating it was removed in v10.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCardDetails(cardId) {\n  // TODO(api-dependabot): retrieveDetails was removed in v10.0.0\n  throw new Error(\"retrieveDetails was removed in v10.0.0\");\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 10.0.0",
+    "retried": false
+  },
+  {
+    "id": "v10-issuing-card-retrieve-details-removed",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Replaced the removed retrieveDetails method with a TODO and an Error throw since no direct replacement method is provided in the SDK.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCardDetails(cardId) {\n  // TODO(api-dependabot): retrieveDetails was removed in v10.0.0\n  throw new Error(\"retrieveDetails was removed in v10.0.0\");\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 10.0.0",
+    "retried": false
+  },
+  {
+    "id": "v10-issuing-card-retrieve-details-removed",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Replaced the removed retrieveDetails method with a TODO comment and a thrown Error indicating it was removed in v10.0.0.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function getCardDetails(cardId) {\n  // TODO(api-dependabot): retrieveDetails was removed in v10.0.0\n  throw new Error(\"retrieveDetails was removed in v10.0.0\");\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 10.0.0",
+    "retried": false
+  },
+  {
+    "id": "v6-checkout-session-renamed-and-namespaced",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Renamed stripe.checkoutSessions to stripe.checkout.sessions to match the new SDK namespace.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createCheckoutSession(items) {\n  return stripe.checkout.sessions.create({ line_items: items });\n}\n",
+    "failures": [],
+    "typeChecked": null,
+    "retried": false
+  },
+  {
+    "id": "v6-checkout-session-renamed-and-namespaced",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Renamed stripe.checkoutSessions to stripe.checkout.sessions to reflect the SDK namespace change.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createCheckoutSession(items) {\n  return stripe.checkout.sessions.create({ line_items: items });\n}\n",
+    "failures": [],
+    "typeChecked": null,
+    "retried": false
+  },
+  {
+    "id": "v6-checkout-session-renamed-and-namespaced",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Renamed stripe.checkoutSessions to stripe.checkout.sessions to match the new SDK namespace.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function createCheckoutSession(items) {\n  return stripe.checkout.sessions.create({ line_items: items });\n}\n",
+    "failures": [],
+    "typeChecked": null,
+    "retried": false
+  },
+  {
+    "id": "v22-2-alpha6-invoice-item-credited-items-removed",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Added a TODO comment above the removed proration_details.credited_items field as it had no direct replacement in the changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\n// The invoice a proration credit was taken from, or null for a debit.\nasync function creditedInvoice(invoiceItemId) {\n  const item = await stripe.invoiceItems.retrieve(invoiceItemId);\n  // TODO(api-dependabot): InvoiceItem.proration_details.credited_items was removed in v22.2.0-alpha.6 and can no longer retrieve the credited items details.\n  const credited = item.proration_details.credited_items;\n  return credited ? credited.invoice : null;\n}",
+    "failures": [],
+    "typeChecked": "stripe 22.2.0-alpha.6",
+    "retried": false
+  },
+  {
+    "id": "v22-2-alpha6-invoice-item-credited-items-removed",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Added a TODO comment above the read of the removed `InvoiceItem.proration_details.credited_items` field as there is no direct replacement in v22.2.0-alpha.6.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\n// The invoice a proration credit was taken from, or null for a debit.\nasync function creditedInvoice(invoiceItemId) {\n  const item = await stripe.invoiceItems.retrieve(invoiceItemId);\n  // TODO(api-dependabot): InvoiceItem.proration_details.credited_items was removed in v22.2.0-alpha.6 and can no longer be accessed to find the credited invoice.\n  const credited = item.proration_details.credited_items;\n  return credited ? credited.invoice : null;\n}",
+    "failures": [],
+    "typeChecked": "stripe 22.2.0-alpha.6",
+    "retried": false
+  },
+  {
+    "id": "v22-2-alpha6-invoice-item-credited-items-removed",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Added a TODO comment above the removed proration_details.credited_items field access since no replacement was provided in the changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\n// The invoice a proration credit was taken from, or null for a debit.\nasync function creditedInvoice(invoiceItemId) {\n  const item = await stripe.invoiceItems.retrieve(invoiceItemId);\n  // TODO(api-dependabot): InvoiceItem.proration_details.credited_items was removed in v22.2.0-alpha.6; this code can no longer retrieve the credited items to find the credited invoice.\n  const credited = item.proration_details.credited_items;\n  return credited ? credited.invoice : null;\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.2.0-alpha.6",
+    "retried": false
+  },
+  {
+    "id": "v22-7-alpha4-blik-mandate-expires-after-renamed",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Replaced the removed expires_after field with the new expires_at field on mandate.payment_method_details.blik based on the release notes.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(\"sk_test_xxx\");\n\n// When a customer's BLIK mandate stops being usable, or null if it doesn't expire.\nasync function blikMandateExpiry(mandateId) {\n  const mandate = await stripe.mandates.retrieve(mandateId);\n  const expiresAfter = mandate.payment_method_details.blik.expires_at;\n  return expiresAfter ? new Date(expiresAfter * 1000) : null;\n}",
+    "failures": [],
+    "typeChecked": "stripe 22.7.0-alpha.4",
+    "retried": false
+  },
+  {
+    "id": "v22-7-alpha4-blik-mandate-expires-after-renamed",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Replaced the removed expires_after field with expires_at on Mandate.payment_method_details.blik.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(\"sk_test_xxx\");\n\n// When a customer's BLIK mandate stops being usable, or null if it doesn't expire.\nasync function blikMandateExpiry(mandateId) {\n  const mandate = await stripe.mandates.retrieve(mandateId);\n  const expiresAfter = mandate.payment_method_details.blik.expires_at;\n  return expiresAfter ? new Date(expiresAfter * 1000) : null;\n}",
+    "failures": [],
+    "typeChecked": "stripe 22.7.0-alpha.4",
+    "retried": false
+  },
+  {
+    "id": "v22-7-alpha4-blik-mandate-expires-after-renamed",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Replaced the removed expires_after field with the new expires_at field on Mandate.payment_method_details.blik.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(\"sk_test_xxx\");\n\n// When a customer's BLIK mandate stops being usable, or null if it doesn't expire.\nasync function blikMandateExpiry(mandateId) {\n  const mandate = await stripe.mandates.retrieve(mandateId);\n  const expiresAfter = mandate.payment_method_details.blik.expires_at;\n  return expiresAfter ? new Date(expiresAfter * 1000) : null;\n}",
+    "failures": [],
+    "typeChecked": "stripe 22.7.0-alpha.4",
+    "retried": false
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold-read",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on the billing alert retrieve response.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function alertThreshold(alertId) {\n  const alert = await stripe.billing.alerts.retrieve(alertId);\n  return alert.usage_threshold.gte;\n}",
+    "failures": [],
+    "typeChecked": "stripe 17.0.0",
+    "retried": false
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold-read",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on the billing alert object as specified in the v17.0.0 changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function alertThreshold(alertId) {\n  const alert = await stripe.billing.alerts.retrieve(alertId);\n  return alert.usage_threshold.gte;\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 17.0.0",
+    "retried": false
+  },
+  {
+    "id": "v17-billing-alert-usage-threshold-read",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Renamed usage_threshold_config to usage_threshold on the billing alert retrieve response based on the v17.0.0 SDK changelog.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function alertThreshold(alertId) {\n  const alert = await stripe.billing.alerts.retrieve(alertId);\n  return alert.usage_threshold.gte;\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 17.0.0",
+    "retried": false
+  },
+  {
+    "id": "v22-7-alpha4-trial-offer-transition-optional",
+    "sample": 1,
+    "pass": true,
+    "explanation": "Added optional chaining to guard the read of trial.end_behavior.transition since the changelog states it is now optional.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function priceAfterTrial(offerId) {\n  const offer = await stripe.productCatalog.trialOffers.retrieve(offerId);\n  return offer.end_behavior.transition?.price;\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.7.0-alpha.4",
+    "retried": false
+  },
+  {
+    "id": "v22-7-alpha4-trial-offer-transition-optional",
+    "sample": 2,
+    "pass": true,
+    "explanation": "Added optional chaining to guard the read of transition since it became optional in v22.7.0-alpha.4.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function priceAfterTrial(offerId) {\n  const offer = await stripe.productCatalog.trialOffers.retrieve(offerId);\n  return offer.end_behavior.transition?.price;\n}",
+    "failures": [],
+    "typeChecked": "stripe 22.7.0-alpha.4",
+    "retried": false
+  },
+  {
+    "id": "v22-7-alpha4-trial-offer-transition-optional",
+    "sample": 3,
+    "pass": true,
+    "explanation": "Added optional chaining to the read of `offer.end_behavior.transition` since the field became optional in v22.7.0-alpha.4.",
+    "patchedCode": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY);\n\nasync function priceAfterTrial(offerId) {\n  const offer = await stripe.productCatalog.trialOffers.retrieve(offerId);\n  return offer.end_behavior.transition?.price;\n}\n",
+    "failures": [],
+    "typeChecked": "stripe 22.7.0-alpha.4",
+    "retried": false
+  }
+]
