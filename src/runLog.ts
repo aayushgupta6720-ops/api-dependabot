@@ -5,7 +5,9 @@ const LOG_PATH = "./run-log.jsonl";
 export interface PatchLogEntry {
   filePath: string;
   // pr_exists: a fix PR for this change and file came from an earlier run (a retry skipped it)
-  status: "pr_opened" | "pr_exists" | "no_change_needed" | "error";
+  // gave_up: it failed in MAX_FILE_ATTEMPTS runs (pipeline.ts), so it no longer holds the releases unseen
+  status: "pr_opened" | "pr_exists" | "no_change_needed" | "error" | "gave_up";
+  attempts?: number; // for error and gave_up: the failed runs so far, this one included
   prUrl?: string;
   explanation?: string;
   typeErrors?: string[]; // what the patch adds against the SDK's types; its PR says Needs review

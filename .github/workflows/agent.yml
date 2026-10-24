@@ -2,8 +2,8 @@ name: Scheduled agent run
 
 # Runs the agent for real on a schedule, then publishes the dashboard to
 # GitHub Pages. What the runs need to remember (run log, last seen release,
-# eval results) lives on the dashboard-data branch, so these commits stay out
-# of main's history.
+# release-notes readings, failed fix attempts, eval results) lives on the
+# dashboard-data branch, so these commits stay out of main's history.
 
 on:
   schedule:
@@ -63,9 +63,11 @@ jobs:
       # Before any step that has the secrets, so install scripts never see them.
       - run: npm ci
 
+      # The extraction cache and fix attempts are newer than the branch's first runs, so may not be there yet.
       - name: Restore state
         run: |
           cp data/run-log.jsonl data/.changelog-state.json .
+          for f in .extraction-cache.json .patch-attempts.json; do if [ -f "data/$f" ]; then cp "data/$f" .; fi; done
           cp -R data/eval-results .
 
       # continue-on-error so a failed run's log entry (index.ts writes it even
@@ -107,6 +109,7 @@ jobs:
       - name: Save state
         run: |
           cp run-log.jsonl .changelog-state.json data/
+          for f in .extraction-cache.json .patch-attempts.json; do if [ -f "$f" ]; then cp "$f" data/; fi; done
           cp -R eval-results/. data/eval-results/
           cd data
           git add -A

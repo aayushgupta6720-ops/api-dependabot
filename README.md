@@ -163,7 +163,17 @@ to scan for and 22 breaking items with nothing to patch.
 
 The marker only moves once every change from those releases has been
 handled. If a patch or PR fails, the releases stay unseen and the next run
-retries them. Each fix goes on a branch keyed on the entry of the notes
+retries them, up to a point: a fix that has failed in three runs is logged
+as `gave_up` (and shown on the dashboard) and stops holding its releases
+back, since a patch the checks always reject would otherwise block every
+later release and spend requests on it daily (`MAX_FILE_ATTEMPTS`, counted in
+`.patch-attempts.json`). A retry doesn't pay for reading the notes again
+either: each release's reading is cached in `.extraction-cache.json`, keyed
+on the release, its notes, the model and `EXTRACTION_VERSION`, and only a
+reading with no problems is kept. A test pins the extraction request's hash,
+so changing the prompt without bumping the version fails CI. And the scanner
+parses the checkout once per run rather than once per change (stripe-node
+v23.0.0 has 54). Each fix goes on a branch keyed on the entry of the notes
 that states it and the file (`api-dependabot/<hash of the entry>-<file>`),
 so a retry finds the PR an earlier run opened and skips that file, without
 a model call, even if the model named or worded the change differently this
@@ -348,7 +358,8 @@ secrets:
   releases and changelog.
 
 What the runs need to remember (`run-log.jsonl`, `.changelog-state.json`,
-`eval-results/`) is kept on the `dashboard-data` branch. Each run restores it,
+`.extraction-cache.json`, `.patch-attempts.json`, `eval-results/`) is kept on
+the `dashboard-data` branch. Each run restores it,
 commits what changed, and pushes it back, so the daily commits stay out of
 `main`. To look at that data locally:
 

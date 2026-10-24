@@ -286,3 +286,15 @@ test("other errors fail at once, and overloads give up after the last retry", as
   await assert.rejects(generatePatch("entry", "a.js", "code"), /Gemini API error: 503/);
   assert.equal(calls(), 1 + RETRY_DELAYS_MS.length);
 });
+
+test("the extraction prompt is the one EXTRACTION_VERSION names", async () => {
+  // Readings are cached under EXTRACTION_VERSION (extractionCache.ts). If this fails, the prompt changed:
+  // bump EXTRACTION_VERSION in llmClient.ts so releases are read again the new way, then update the hash here.
+  const bodies = modelSays({ changes: [], notPatched: [] });
+  const { extractBreakingChanges, EXTRACTION_VERSION } = await import("./llmClient.js");
+  await extractBreakingChanges("stripe", [{ version: "v1.0.0", notes: "* Add `charges.search`" }]);
+  const { createHash } = await import("node:crypto");
+  // The whole request: the prompt, and the settings the reply is parsed under (JSON, temperature 0).
+  const hash = createHash("sha256").update(JSON.stringify(bodies[0])).digest("hex").slice(0, 16);
+  assert.deepEqual([EXTRACTION_VERSION, hash], ["extract_v1", "fbded6231d31c03a"]);
+});

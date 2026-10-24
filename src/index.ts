@@ -1,3 +1,4 @@
+import { fileAttempts } from "./attempts.js";
 import { config } from "./config.js";
 import { checkForBreakingChanges, markReleasesSeen } from "./changelogWatcher.js";
 import { findApiVersionPins, findFieldUsages, findUsages } from "./scanner.js";
@@ -10,6 +11,7 @@ import { installedVersion } from "./versions.js";
 
 // Path to a LOCAL checkout of the repo you're scanning (clone it first).
 const LOCAL_REPO_PATH = "./target-repo";
+const ATTEMPTS_PATH = "./.patch-attempts.json";
 
 async function main() {
   const startedAt = new Date().toISOString();
@@ -50,6 +52,7 @@ async function main() {
         findFixPr,
         openFixPr,
         markReleasesSeen,
+        ...fileAttempts(ATTEMPTS_PATH),
         typeCheck: (release, before, after) => addedTypeErrors(config.targetPackage, release, before, after),
       },
       { repoPath: LOCAL_REPO_PATH, targetPackage: config.targetPackage }

@@ -25,7 +25,16 @@ export interface PipelineDeps {
   findFixPr(branch: string): Promise<string | null>;
   openFixPr(branch: string, filePath: string, content: string, title: string, body: string): Promise<string>;
   markReleasesSeen(tag: string): void;
+  // Failed runs of one fix (keyed by its branch), kept between runs (see
+  // attempts.ts). Without them every failure counts as the first.
+  failedAttempts?(branch: string): number;
+  recordFailure?(branch: string): number; // returns the new count
 }
+
+// A fix that fails in this many runs is given up on: logged as gave_up,
+// and no longer keeping its releases unseen. Before, a patch the checks always
+// rejected held every later release back and spent requests on it every day.
+export const MAX_FILE_ATTEMPTS = 3;
 
 /**
  * `patched` with the same ending and line breaks as `original`: the model
@@ -224,6 +233,12 @@ export async function processChange(
           changeLog.patches.push({ filePath: relativePath, status: "pr_exists", prUrl: existing });
           continue;
         }
+        const failedBefore = deps.failedAttempts?.(branch) ?? 0;
+        if (failedBefore >= MAX_FILE_ATTEMPTS) {
+          console.log(`${relativePath}: failed ${failedBefore} runs already. Given up; not patching it again.`);
+          changeLog.patches.push({ filePath: relativePath, status: "gave_up", attempts: failedBefore });
+          continue;
+        }
 
         let patch = change.apiVersion
           ? repinApiVersion(usage, change.version, change.apiVersion)
@@ -283,7 +298,10 @@ export async function processChange(
       } catch (err) {
         const message = (err as Error).message;
         console.error(`Failed to patch ${usage.filePath}: ${message}`);
-        changeLog.patches.push({ filePath: relativePath, status: "error", error: message });
+        const attempts = deps.recordFailure?.(branch) ?? 1;
+        const gaveUp = attempts >= MAX_FILE_ATTEMPTS;
+        if (gaveUp) console.error(`That's ${attempts} failed runs for ${relativePath}: giving up on it.`);
+        changeLog.patches.push({ filePath: relativePath, status: gaveUp ? "gave_up" : "error", error: message, attempts });
       }
     }
   } catch (err) {
@@ -298,7 +316,8 @@ export async function processChange(
 /**
  * Handle every change from a batch of new releases, then mark the releases
  * as seen, but only if nothing failed. After a failure they stay unseen, so
- * the next run retries them; files that already got a PR are skipped then.
+ * the next run retries them; files that already got a PR are skipped then,
+ * and a fix that has failed MAX_FILE_ATTEMPTS runs no longer counts as a failure.
  */
 export async function processReleases(
   releases: { changes: DetectedChange[]; latestTag: string | null; notesProblems?: string[] },

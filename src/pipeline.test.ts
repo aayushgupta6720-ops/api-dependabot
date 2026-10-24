@@ -311,3 +311,32 @@ test("a patch that type-checks, or can't be checked, opens as a fix", async () =
     assert.equal(result.changes[0].patches[0].typeErrors, undefined);
   }
 });
+
+test("a fix that fails in three runs is given up on, and stops holding its releases unseen", async () => {
+  const { deps, calls } = fakes();
+  deps.openFixPr = async (_branch, file) => {
+    if (file === "b.js") throw new Error("patch rejected: it doesn't parse");
+    return "https://github.com/me/repo/pull/1";
+  };
+  const failures = new Map<string, number>();
+  deps.failedAttempts = (branch) => failures.get(branch) ?? 0;
+  deps.recordFailure = (branch) => {
+    failures.set(branch, (failures.get(branch) ?? 0) + 1);
+    return failures.get(branch)!;
+  };
+
+  for (const expected of [1, 2]) {
+    const run = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
+    assert.deepEqual(run.changes[0].patches[1], { filePath: "b.js", status: "error", error: "patch rejected: it doesn't parse", attempts: expected });
+    assert.equal(run.markedSeen, false);
+  }
+  const third = await processReleases({ changes: [change], latestTag: "v18.0.0" }, deps, opts);
+  assert.equal(third.changes[0].patches[1].status, "gave_up");
+  assert.deepEqual(calls.markedSeen, ["v18.0.0"]);
+
+  // A later run (the same entry repeated in a newer release, say) doesn't spend a model call on it.
+  calls.generatePatch.length = 0;
+  const later = await processReleases({ changes: [change], latestTag: "v18.0.1" }, deps, opts);
+  assert.deepEqual(later.changes[0].patches[1], { filePath: "b.js", status: "gave_up", attempts: 3 });
+  assert.ok(!calls.generatePatch.includes("/repo/b.js"));
+});

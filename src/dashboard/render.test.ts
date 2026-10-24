@@ -63,3 +63,12 @@ test("a setup failure is labelled as one", () => {
     error: "Bad credentials", errorKind: "setup" }]);
   assert.ok(html.includes("setup error (not the agent): Bad credentials"));
 });
+
+test("a fix given up on shows how many runs failed, with its last error escaped", () => {
+  const html: string = render.renderRuns([{ ...hostileRun, error: undefined, notesProblems: [], changes: [{
+    ...hostileRun.changes[0], error: undefined,
+    patches: [{ filePath: "b.js", status: "gave_up", attempts: 3, error: '"><script>alert(6)</script>' }],
+  }] }]);
+  assert.ok(html.includes("b.js: gave up after 3 failed runs"));
+  assert.ok(!html.includes("<script>alert(6)"));
+});

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { fieldSegments, findApiVersionPins, findFieldUsages, findUsages, readsField } from "./scanner.js";
+import { clearScanCache, fieldSegments, findApiVersionPins, findFieldUsages, findUsages, readsField } from "./scanner.js";
 
 /** A throwaway repo with the given files; returns its path. */
 function repo(files: Record<string, string>): string {
@@ -244,4 +244,14 @@ export const stripe = new Stripe(key, {
     "other.ts": `const config = { apiVersion: "v2" };\n`, // not the SDK's
   });
   assert.deepEqual(lines(findApiVersionPins(dir, "stripe", "2022-11-15")), { "stripe.ts": [4], "quoted.ts": [2] });
+});
+
+test("a checkout is parsed once per process: later scans reuse it until the cache is cleared", () => {
+  const dir = repo({ "a.js": 'const stripe = require("stripe")("sk");\nstripe.charges.create({});\n' });
+  assert.deepEqual(lines(findUsages(dir, "stripe", "charges.create")), { "a.js": [2] });
+  writeFileSync(path.join(dir, "b.js"), 'const stripe = require("stripe")("sk");\nstripe.charges.create({});\n');
+  // A run never edits its checkout, so the second scan (another change, same run) uses the first parse.
+  assert.deepEqual(lines(findUsages(dir, "stripe", "charges.create")), { "a.js": [2] });
+  clearScanCache();
+  assert.deepEqual(lines(findUsages(dir, "stripe", "charges.create")), { "a.js": [2], "b.js": [2] });
 });

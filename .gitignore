@@ -3,6 +3,8 @@ dist/
 .env
 .DS_Store
 .changelog-state.json
+.extraction-cache.json
+.patch-attempts.json
 run-log.jsonl
 eval-results/
 _site/

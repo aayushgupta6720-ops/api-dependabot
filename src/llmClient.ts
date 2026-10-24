@@ -4,7 +4,12 @@ import { numberNotes, relatedLines, splitNotes, type NotesItem } from "./release
 
 export type { DetectedChange } from "./changes.js";
 
-const MODEL = "gemini-3.5-flash-lite"; // check https://ai.google.dev for current free-tier model names
+export const MODEL = "gemini-3.5-flash-lite"; // check https://ai.google.dev for current free-tier model names
+
+// What the extraction prompt and its parsing are, for the extraction cache
+// (extractionCache.ts): bump it whenever either changes, so releases are read
+// again the new way. A test pins the prompt's hash to catch a missed bump.
+export const EXTRACTION_VERSION = "extract_v1";
 
 export interface PatchResult {
   explanation: string;

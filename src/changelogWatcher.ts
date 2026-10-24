@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { config } from "./config.js";
+import { extractWithCache, loadExtractionCache, saveExtractionCache } from "./extractionCache.js";
 import { extractBreakingChanges, type DetectedChange } from "./llmClient.js";
 import { apiVersionChange, resolveReleaseNotes } from "./releaseNotes.js";
 import { isRelevant } from "./versions.js";
@@ -9,6 +10,7 @@ const octokit = new Octokit({ auth: config.githubToken });
 const [owner, repo] = config.targetPackageRepo.split("/");
 
 const STATE_PATH = "./.changelog-state.json";
+const EXTRACTION_CACHE_PATH = "./.extraction-cache.json";
 
 interface WatcherState {
   lastSeenTag: string | null;
@@ -118,10 +120,11 @@ export async function checkForBreakingChanges(installed: string | null = null): 
     problems.push(`the last seen release, ${state.lastSeenTag}, isn't among the latest ${ordered.length}, so releases since it weren't read`);
   }
 
-  const found =
-    readable.length > 0
-      ? await extractBreakingChanges(config.targetPackage, readable)
-      : { changes: [], notPatched: [], problems: [] };
+  // A release read before (it stayed unseen while its fixes failed) isn't sent to the model again.
+  const cache = loadExtractionCache(EXTRACTION_CACHE_PATH);
+  const found = await extractWithCache(config.targetPackage, readable, cache, extractBreakingChanges);
+  saveExtractionCache(EXTRACTION_CACHE_PATH, cache);
+  if (found.reused.length > 0) console.log(`Read before, not sent to the model again: ${found.reused.join(", ")}`);
   problems.push(...found.problems);
   for (const problem of problems) console.warn(problem);
   for (const item of found.notPatched) console.log(`Breaking, nothing to patch: ${item.entry}`);

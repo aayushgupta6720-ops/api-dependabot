@@ -30,6 +30,9 @@ function badge(patch) {
   if (patch.status === "no_change_needed") {
     return `<span class="badge badge-skip">${file}: no change needed</span>`;
   }
+  if (patch.status === "gave_up") {
+    return `<span class="badge badge-error" title="${esc(patch.error ?? "")}">${file}: gave up after ${esc(String(patch.attempts ?? ""))} failed runs</span>`;
+  }
   return `<span class="badge badge-error" title="${esc(patch.error)}">${file}: error</span>`;
 }
 

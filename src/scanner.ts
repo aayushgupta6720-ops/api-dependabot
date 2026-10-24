@@ -12,17 +12,36 @@ export interface UsageMatch {
   snippet: string;
 }
 
+// Parsed checkouts, and the clients resolved in them per package. A run scans
+// one checkout for every change in its releases (54 for stripe-node v23.0.0),
+// and each scan used to parse the whole repo again. A run never edits its
+// checkout (fixes go out as pull requests through the API), so nothing here
+// goes stale within a process; clearScanCache() is for one that does change.
+const parsedCheckouts = new Map<string, SourceFile[]>();
+const clientsByCheckout = new Map<string, Map<SourceFile, Clients>>();
+
+export function clearScanCache(): void {
+  parsedCheckouts.clear();
+  clientsByCheckout.clear();
+}
+
 /** The repo's own source: dependencies, type declarations and build output
  * aren't code to patch, and node_modules would bury the real matches. */
 function loadSourceFiles(repoPath: string): SourceFile[] {
-  const project = new Project({ compilerOptions: { allowJs: true } });
-  project.addSourceFilesAtPaths([
-    `${repoPath}/**/*.{ts,tsx,js,jsx,mjs,cjs}`,
-    `!${repoPath}/**/node_modules/**`,
-    `!${repoPath}/**/*.d.ts`,
-    `!${repoPath}/**/{dist,build}/**`,
-  ]);
-  return project.getSourceFiles();
+  const key = path.resolve(repoPath);
+  let files = parsedCheckouts.get(key);
+  if (!files) {
+    const project = new Project({ compilerOptions: { allowJs: true } });
+    project.addSourceFilesAtPaths([
+      `${repoPath}/**/*.{ts,tsx,js,jsx,mjs,cjs}`,
+      `!${repoPath}/**/node_modules/**`,
+      `!${repoPath}/**/*.d.ts`,
+      `!${repoPath}/**/{dist,build}/**`,
+    ]);
+    files = project.getSourceFiles();
+    parsedCheckouts.set(key, files);
+  }
+  return files;
 }
 
 /** The package itself ("stripe", "stripe/esm"), not another one whose name
@@ -304,6 +323,31 @@ function importClients(sourceFile: SourceFile, c: Clients, exported: Map<SourceF
   }
 }
 
+/** Each file's package clients, found across the whole repo, worked out once
+ * per checkout and package. Three rounds, so a client created in one module
+ * and re-exported by a second is still recognised in a third. */
+function resolveClients(repoPath: string, files: SourceFile[], packageName: string): Map<SourceFile, Clients> {
+  const key = `${path.resolve(repoPath)}\0${packageName}`;
+  let clients = clientsByCheckout.get(key);
+  if (clients) return clients;
+  clients = new Map<SourceFile, Clients>();
+  const byPath = new Map(files.map((f) => [f.getFilePath() as string, f]));
+  const exported = new Map<SourceFile, Set<string>>();
+  for (let round = 0; round < 3; round++) {
+    for (const file of files) {
+      const c = clients.get(file) ?? {
+        packageNames: packageBindings(file, packageName), vars: new Set(), props: new Set(), resources: new Map(),
+      };
+      importClients(file, c, exported, byPath);
+      collectClients(file, c, packageName);
+      clients.set(file, c);
+    }
+    for (const file of files) exported.set(file, exportedClients(file, clients.get(file)!, packageName));
+  }
+  clientsByCheckout.set(key, clients);
+  return clients;
+}
+
 /**
  * Scans a repo (already checked out locally) for call sites that resolve back
  * to a client built from `packageName`, e.g. findUsages("./repo", "stripe",
@@ -320,22 +364,7 @@ export function findUsages(
   methodName: string
 ): UsageMatch[] {
   const files = loadSourceFiles(repoPath);
-  const byPath = new Map(files.map((f) => [f.getFilePath() as string, f]));
-  const clients = new Map<SourceFile, Clients>();
-  const exported = new Map<SourceFile, Set<string>>();
-  // Two rounds, so a client created in one module and re-exported by a
-  // second is still recognised in a third.
-  for (let round = 0; round < 3; round++) {
-    for (const file of files) {
-      const c = clients.get(file) ?? {
-        packageNames: packageBindings(file, packageName), vars: new Set(), props: new Set(), resources: new Map(),
-      };
-      importClients(file, c, exported, byPath);
-      collectClients(file, c, packageName);
-      clients.set(file, c);
-    }
-    for (const file of files) exported.set(file, exportedClients(file, clients.get(file)!, packageName));
-  }
+  const clients = resolveClients(repoPath, files, packageName);
 
   const callsPackage = methodName.toLowerCase() === packageName.toLowerCase();
   const matches: UsageMatch[] = [];
