@@ -1,0 +1,285 @@
+{
+  "checks": [
+    {
+      "id": "extraction: every item marked breaking accounted for",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "extraction: the methods the repo calls",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "pipeline: no failed scans or rejected patches",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "pipeline: a PR for each affected file, and none for the rest",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "pipeline: releases marked seen",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "patch: billing.js",
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "patch: cards.js",
+      "pass": true,
+      "failures": []
+    }
+  ],
+  "extraction": {
+    "changes": [
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Account` field `business_profile` became nullable.",
+        "fieldPath": "business_profile",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Account` field `business_type` became nullable.",
+        "fieldPath": "business_type",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Account` field `country` became nullable.",
+        "fieldPath": "country",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Account` field `default_currency` became nullable.",
+        "fieldPath": "default_currency",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Account` field `settings` became nullable.",
+        "fieldPath": "settings",
+        "resource": "accounts",
+        "source": "* Change type of `business_profile`, `business_type`, `country`, `default_currency`, and `settings` properties on `Account` resource to be nullable."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Checkout.Session` field `currency` changed type.",
+        "fieldPath": "currency",
+        "resource": "checkout.sessions",
+        "source": "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`.",
+        "related": [
+          "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+          "* Add support for `shipping_cost` and `shipping_details` on `Checkout.Session`"
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `address` became nullable.",
+        "fieldPath": "address",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `currency` became nullable.",
+        "fieldPath": "currency",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `delinquent` became nullable.",
+        "fieldPath": "delinquent",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `discount` became nullable.",
+        "fieldPath": "discount",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `invoice_prefix` became nullable.",
+        "fieldPath": "invoice_prefix",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `name` became nullable.",
+        "fieldPath": "name",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `phone` became nullable.",
+        "fieldPath": "phone",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: `Customer` field `preferred_locales` became nullable.",
+        "fieldPath": "preferred_locales",
+        "resource": "customers",
+        "source": "* Change type of `address`, `currency`, `delinquent`, `discount`, `invoice_prefix`, `name`, `phone`, and `preferred_locales` properties on `Customer` resource to be nullable.",
+        "related": [
+          "* Change type of `currency` property on `Checkout.Session` resource from `string` to `'cad' | 'usd'`."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `AlipayAccount` and `BitcoinReceiver` from `CustomerSource`.",
+        "fieldPath": "sources",
+        "resource": "customers",
+        "source": "* Remove `AlipayAccount` and `BitcoinReceiver` from `CustomerSource`.",
+        "related": [
+          "* Remove for `AlipayAccount`, `DeletedAlipayAccount`, `BitcoinReceiver`, `DeletedBitcoinReceiver`, `BitcoinTransaction`, and `BitcoinTransactionListParams` definitions."
+        ]
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `Stripe.DeletedAlipayAccount` and `Stripe.DeletedBitcoinReceiver` from possible values of `source` property in `PaymentIntent`.",
+        "fieldPath": "source",
+        "resource": "paymentIntents",
+        "source": "* Remove `Stripe.DeletedAlipayAccount` and `Stripe.DeletedBitcoinReceiver` from possible values of `source` property in `PaymentIntent`."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `retrieveDetails` method from `Issuing.Card` resource.",
+        "methodName": "issuing.cards.retrieveDetails",
+        "source": "* Remove `retrieveDetails` method from `Issuing.Card` resource. The method was unsupported. Read more at https://stripe.com/docs/issuing/cards/virtual."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `IssuerFraudRecords` resource.",
+        "methodName": "issuerFraudRecords.list",
+        "source": "* Remove `IssuerFraudRecords` resource."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `recipient` property from `Card` resource.",
+        "fieldPath": "recipient",
+        "resource": "cards",
+        "source": "* Remove `Recipient` resource and`recipient` property from `Card` resource."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `redirect_url` from `LoginLinks` definition.",
+        "fieldPath": "redirect_url",
+        "resource": "accounts",
+        "source": "* Remove `redirect_url` from `LoginLinks` definition. The property is no longer supported."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Rename `listUpcomingLineItems` method on `Invoice` resource to `listUpcomingLines`.",
+        "methodName": "invoices.listUpcomingLineItems",
+        "source": "* Rename `listUpcomingLineItems` method on `Invoice` resource to `listUpcomingLines`."
+      }
+    ],
+    "notPatched": [
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Change location of TypeScript definitions for `CreditNoteLineItemListPreviewParams` etc., which only affects type definition files and not runtime usage."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Rename `InvoiceRetrieveUpcomingParams` to `InvoiceListUpcomingLinesParams`, which is a type definition parameter name change."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove for `AlipayAccount`, `DeletedAlipayAccount`, `BitcoinReceiver`, `DeletedBitcoinReceiver`, `BitcoinTransaction`, and `BitcoinTransactionListParams` definitions, which are type definitions/resources."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `IssuerFraudRecord`, `IssuerFraudRecordRetrieveParams`, `IssuerFraudRecordListParams`, and `IssuerFraudRecordsResource` definitions, which are type definitions."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `treasury.received_credit.reversed` webhook event constant, which is a constant name change rather than a client method or field."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `order.payment_failed`, `transfer.failed`, and `transfer.paid` webhook events, which were already deprecated."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `Issuing.CardDetails` and `CardRetrieveDetailsParams` definitions, which are type definitions."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `Recipient` resource, which is no longer part of the API."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `InvoiceMarkUncollectibleParams` definition, which is a type definition."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove deprecated `Stripe.Errors` and `StripeError` definitions, which were deprecated error types."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Remove `LineItemListParams` definition, which was no longer in use."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Rename `InvoiceLineItemListUpcomingParams` to `InvoiceListUpcomingLinesParams`, which is a type definition rename."
+      },
+      {
+        "version": "v10.0.0",
+        "entry": "v10.0.0: Rename `InvoiceRetrieveUpcomingParams` to `InvoiceListUpcomingLinesParams`, which is a type definition rename."
+      }
+    ],
+    "problems": []
+  },
+  "opened": [
+    {
+      "file": "cards.js",
+      "content": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: \"2022-08-01\" });\n\nexport async function getCardDetails(cardId) {\n  // TODO(api-dependabot): retrieveDetails was removed in v10.0.0\n  throw new Error(\"retrieveDetails was removed in v10.0.0\");\n}\n\nexport async function freezeCard(cardId) {\n  return stripe.issuing.cards.update(cardId, { status: \"inactive\" });\n}\n",
+      "title": "Needs review: issuing.cards.retrieveDetails"
+    },
+    {
+      "file": "billing.js",
+      "content": "import Stripe from \"stripe\";\nconst stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: \"2022-08-01\" });\n\nexport async function upcomingLines(customerId) {\n  const page = await stripe.invoices.listUpcomingLines({ customer: customerId });\n  return page.data.map((line) => ({ description: line.description, amount: line.amount }));\n}\n",
+      "title": "Fix breaking change: invoices.listUpcomingLineItems"
+    }
+  ]
+}
