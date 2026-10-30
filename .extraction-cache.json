@@ -1,1 +1,15 @@
-{}
+{
+  "04b6b111370c7d61f8272f0e56dd73bc2da5464df7e0d2d133f6d20fb899c903": {
+    "savedAt": "2026-10-30T13:04:43.852Z",
+    "changes": [
+      {
+        "version": "v23.1.0",
+        "entry": "23.1.0: Change `SubscriptionSchedule.pause_schedules` to be required",
+        "fieldPath": "pause_schedules",
+        "resource": "subscriptionSchedules",
+        "source": "  * Change `SubscriptionSchedule.pause_schedules` to be required"
+      }
+    ],
+    "notPatched": []
+  }
+}
