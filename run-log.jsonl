@@ -49,3 +49,4 @@
 {"runId":"2026-11-03T14:25:20.109Z","startedAt":"2026-11-03T14:25:20.109Z","durationMs":774,"targetPackageRepo":"stripe/stripe-node","changesFound":0,"changes":[],"installedVersion":null}
 {"runId":"2026-11-04T14:40:09.084Z","startedAt":"2026-11-04T14:40:09.084Z","durationMs":936,"targetPackageRepo":"stripe/stripe-node","changesFound":0,"changes":[],"installedVersion":null}
 {"runId":"2026-11-05T14:44:45.047Z","startedAt":"2026-11-05T14:44:45.047Z","durationMs":590,"targetPackageRepo":"stripe/stripe-node","changesFound":0,"changes":[],"installedVersion":null}
+{"runId":"2026-11-06T14:22:59.021Z","startedAt":"2026-11-06T14:22:59.021Z","durationMs":733,"targetPackageRepo":"stripe/stripe-node","changesFound":0,"changes":[],"installedVersion":null,"skippedReleases":["v23.2.0-alpha.2"]}
