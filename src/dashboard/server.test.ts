@@ -51,6 +51,20 @@ test("bad log lines, eval files and state are skipped instead of taking the dash
   assert.equal((await get("/api/status.json")).status, 200); // and it's still up
 });
 
+test("only a failed model call counts as not judged; an unusable reply is a failed patch", async () => {
+  const fail = (failure: string) => ({ id: "a", pass: false, failures: [failure] });
+  writeFileSync(path.join(paths.evalResults, "2026-11-16T16-24-40-000Z.json"), JSON.stringify([
+    { id: "a", pass: true, failures: [] },
+    fail("error: Gemini API error: 503 {\"error\": \"high demand\"}"),
+    fail("error: Gemini reply stopped early: finishReason OTHER after 50 chars"),
+    fail("error: Could not parse model output as JSON:\n{\"explanation\": \"cut"),
+    fail("error: The model's patch reply isn't {\"explanation\": \"...\", \"patchedCode\": \"...\"}:\n{}"),
+    fail("patched code still calls listUpcomingLineItems"),
+  ]));
+  const evals = JSON.parse((await get("/api/evals.json")).body);
+  assert.deepEqual(evals[0], { file: "2026-11-16T16-24-40-000Z.json", timestamp: "2026-11-16T16-24-40-000Z", passed: 1, total: 6, modelErrors: 2 });
+});
+
 test("routes ignore query strings and files outside public/ stay out of reach", async () => {
   assert.equal((await get("/api/runs.json?nocache=1")).status, 200);
   assert.equal((await get("/")).status, 200);

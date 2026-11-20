@@ -34,9 +34,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      agent: ${{ steps.agent.outcome }}
     env:
       EVAL_RUN: ${{ github.event.schedule == '43 6 * * 1' || inputs.eval == true }}
     steps:
@@ -127,12 +126,35 @@ jobs:
         with:
           path: _site
 
+  # Its own job, as GitHub's Pages workflows do: deployed in the job that
+  # uploaded it, the artifact once wasn't found yet ("Found 0 artifact(s)",
+  # 2026-11-19), and Pages has failed on its side too (a 500 creating the
+  # deployment, 2026-11-02). Either way the state was saved but the dashboard
+  # fell a run behind, so a failed deploy gets one more try.
+  deploy:
+    needs: run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy-again.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+
+      - name: Wait a minute before deploying again
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 60
+
+      - name: Deploy to GitHub Pages again
+        id: deploy-again
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v5
 
       - name: Fail the run if the agent failed
-        if: steps.agent.outcome == 'failure'
+        if: needs.run.outputs.agent == 'failure'
         run: |
           echo "The agent failed; its error is in the run log and on the dashboard."
           exit 1

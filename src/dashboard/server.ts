@@ -52,9 +52,15 @@ interface EvalSummary {
   passed: number;
   total: number;
   // Cases that failed only because the model call errored (a 429 or 503 from
-  // Gemini): the patch was never judged, so they say nothing about its quality.
+  // Gemini after the retries, or a reply it stopped partway): the patch was
+  // never judged, so they say nothing about its quality. A reply that came
+  // back whole but unusable (not the JSON asked for) is the model's answer,
+  // and counts as a failed patch: on 2026-11-16, 8 of those were shown as
+  // "not judged (rate limit or overload)", which hid the drop.
   modelErrors: number;
 }
+
+const MODEL_CALL_FAILED = /^error: Gemini (API error|reply stopped early)/;
 
 function readEvals(paths: DashboardPaths): EvalSummary[] {
   if (!existsSync(paths.evalResults)) return [];
@@ -74,7 +80,7 @@ function readEvals(paths: DashboardPaths): EvalSummary[] {
       passed: results.filter((r) => r.pass).length,
       total: results.length,
       modelErrors: results.filter(
-        (r) => !r.pass && r.failures.length > 0 && r.failures.every((f) => f.startsWith("error:"))
+        (r) => !r.pass && r.failures.length > 0 && r.failures.every((f) => MODEL_CALL_FAILED.test(f))
       ).length,
     });
   }
