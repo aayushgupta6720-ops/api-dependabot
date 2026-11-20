@@ -56,8 +56,26 @@ async function callGemini(prompt: string, generationConfig?: Record<string, unkn
     }
 
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    return text.replace(/```json|```/g, "").trim();
+    const candidate = data.candidates?.[0];
+    // A reply can come in several parts, and an overloaded model can stop
+    // partway with a 200 and a finishReason other than STOP. Reading only the
+    // first part, and taking every reply as whole, cut 8 of 42 eval patches
+    // off mid-string on 2026-11-16, amid a run of 429s and 503s.
+    const parts: { text?: unknown; thought?: boolean }[] = candidate?.content?.parts ?? [];
+    const text = parts.map((p) => (!p.thought && typeof p.text === "string" ? p.text : "")).join("");
+    const finish: string | undefined = candidate?.finishReason;
+    if (finish && finish !== "STOP") {
+      // Out of output tokens isn't a passing overload: asking again gives the same.
+      if (finish !== "MAX_TOKENS" && delay !== undefined) {
+        console.warn(`Gemini reply stopped early (${finish}, ${text.length} chars), retrying in ${delay / 1000}s`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw new Error(`Gemini reply stopped early: finishReason ${finish} after ${text.length} chars`);
+    }
+    // Only a fence around the whole reply: one inside it may be part of the
+    // file being patched.
+    return text.trim().replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```$/, "").trim();
   }
 }
 
@@ -398,11 +416,23 @@ How to update it:
 Return ONLY a JSON object with this exact shape, no markdown fences, no extra text:
 {"explanation": "one sentence on what you changed and why; if you only added a TODO for review, say so", "patchedCode": "the full updated file contents"}`;
 
-  const cleaned = await callGemini(prompt);
-
-  try {
-    return JSON.parse(cleaned) as PatchResult;
-  } catch {
-    throw new Error(`Could not parse model output as JSON:\n${cleaned}`);
+  // JSON mode, as the extraction asks for: the reply carries a whole file in a
+  // string, and the model must escape it properly.
+  // A reply that still doesn't parse (cut off with a STOP, say) is asked for
+  // once more before the patch fails.
+  for (let attempt = 0; ; attempt++) {
+    const cleaned = await callGemini(prompt, { responseMimeType: "application/json" });
+    let problem: string;
+    try {
+      const parsed = JSON.parse(cleaned) as Partial<PatchResult> | null;
+      if (typeof parsed?.explanation === "string" && typeof parsed?.patchedCode === "string") {
+        return { explanation: parsed.explanation, patchedCode: parsed.patchedCode };
+      }
+      problem = `The model's patch reply isn't {"explanation": "...", "patchedCode": "..."}:\n${cleaned.slice(0, 500)}`;
+    } catch {
+      problem = `Could not parse model output as JSON:\n${cleaned}`;
+    }
+    if (attempt === 1) throw new Error(problem);
+    console.warn(`${problem.split("\n")[0]} (${cleaned.length} chars); asking again`);
   }
 }

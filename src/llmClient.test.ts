@@ -287,6 +287,72 @@ test("other errors fail at once, and overloads give up after the last retry", as
   assert.equal(calls(), 1 + RETRY_DELAYS_MS.length);
 });
 
+/** Gemini answers each call with the next candidate (the last one repeats), and the request bodies are recorded. */
+function candidates(...answers: { parts: { text?: string; thought?: boolean }[]; finishReason?: string }[]) {
+  const bodies: { generationConfig?: Record<string, unknown> }[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    const { parts, finishReason } = answers[Math.min(bodies.length - 1, answers.length - 1)];
+    return new Response(JSON.stringify({ candidates: [{ content: { parts }, ...(finishReason && { finishReason }) }] }));
+  }) as typeof fetch;
+  return bodies;
+}
+
+const patchReply = JSON.stringify({ explanation: "Renamed it.", patchedCode: "const s = '```';\nstripe.invoices.listUpcomingLines();\n" });
+
+test("a reply split across parts is read whole, without the model's thoughts", async () => {
+  const { generatePatch } = await import("./llmClient.js");
+  const bodies = candidates({
+    parts: [{ text: "thinking about it", thought: true }, { text: patchReply.slice(0, 40) }, { text: patchReply.slice(40) }],
+    finishReason: "STOP",
+  });
+  assert.deepEqual(await generatePatch("entry", "a.js", "code"), JSON.parse(patchReply));
+  assert.equal(bodies.length, 1);
+  // JSON mode, as the extraction asks for.
+  assert.equal(bodies[0].generationConfig?.responseMimeType, "application/json");
+});
+
+test("a reply that stopped early is asked for again; one out of output tokens fails at once", async () => {
+  const { generatePatch, RETRY_DELAYS_MS } = await import("./llmClient.js");
+  RETRY_DELAYS_MS.fill(0);
+
+  let bodies = candidates({ parts: [{ text: patchReply.slice(0, 50) }], finishReason: "OTHER" }, { parts: [{ text: patchReply }], finishReason: "STOP" });
+  assert.deepEqual(await generatePatch("entry", "a.js", "code"), JSON.parse(patchReply));
+  assert.equal(bodies.length, 2);
+
+  bodies = candidates({ parts: [{ text: patchReply.slice(0, 50) }], finishReason: "OTHER" });
+  await assert.rejects(generatePatch("entry", "a.js", "code"), /stopped early: finishReason OTHER/);
+  assert.equal(bodies.length, 1 + RETRY_DELAYS_MS.length);
+
+  bodies = candidates({ parts: [{ text: patchReply.slice(0, 50) }], finishReason: "MAX_TOKENS" });
+  await assert.rejects(generatePatch("entry", "a.js", "code"), /stopped early: finishReason MAX_TOKENS/);
+  assert.equal(bodies.length, 1);
+});
+
+test("a patch reply that isn't the JSON asked for is asked for once more before the patch fails", async () => {
+  const { generatePatch } = await import("./llmClient.js");
+
+  // Cut off mid-string, as on 2026-11-16, though the model said it had finished.
+  let bodies = candidates({ parts: [{ text: patchReply.slice(0, 60) }], finishReason: "STOP" }, { parts: [{ text: patchReply }] });
+  assert.deepEqual(await generatePatch("entry", "a.js", "code"), JSON.parse(patchReply));
+  assert.equal(bodies.length, 2);
+
+  bodies = candidates({ parts: [{ text: patchReply.slice(0, 60) }] });
+  await assert.rejects(generatePatch("entry", "a.js", "code"), /Could not parse model output as JSON/);
+  assert.equal(bodies.length, 2);
+
+  bodies = candidates({ parts: [{ text: JSON.stringify({ explanation: "no code" }) }] });
+  await assert.rejects(generatePatch("entry", "a.js", "code"), /isn't \{"explanation"/);
+  assert.equal(bodies.length, 2);
+});
+
+test("a markdown fence around the reply is dropped, and one inside the patched file is kept", async () => {
+  const { generatePatch } = await import("./llmClient.js");
+  candidates({ parts: [{ text: "```json\n" + patchReply + "\n```" }] });
+  const patch = await generatePatch("entry", "a.js", "code");
+  assert.ok(patch.patchedCode.includes("'```'"), patch.patchedCode);
+});
+
 test("the extraction prompt is the one EXTRACTION_VERSION names", async () => {
   // Readings are cached under EXTRACTION_VERSION (extractionCache.ts). If this fails, the prompt changed:
   // bump EXTRACTION_VERSION in llmClient.ts so releases are read again the new way, then update the hash here.
